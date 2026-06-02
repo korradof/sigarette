@@ -300,7 +300,7 @@
 <div id="pinScreen" style="display:none">
   <div style="font-size:11px;letter-spacing:4px;color:#444;text-transform:uppercase;margin-bottom:8px">ACCESSO</div>
   <h2>🚬 Sigarette Live</h2>
-  <p id="pinPrompt">Inserisci il PIN per accedere</p>
+  <p id="pinPrompt" style="color:#555;font-size:12px;margin-bottom:20px">Inserisci il PIN per accedere</p>
   <div class="pin-dots">
     <div class="pin-dot" id="d0"></div>
     <div class="pin-dot" id="d1"></div>
@@ -322,7 +322,7 @@
     <button class="pin-btn del" onclick="pinDel()">⌫</button>
   </div>
   <div id="pinError"></div>
-  <div id="pinChangeLink" onclick="showPinChange()" style="display:none">Cambia PIN</div>
+  <div style="color:#333;font-size:10px;margin-top:20px">Per cambiare PIN modifica Apps Script</div>
 </div>
 
 <div class="footer">live · Google Apps Script proxy · Google Sheets</div>
@@ -681,7 +681,8 @@ function showError(msg) {
 }
 
 async function fetchProxy(params) {
-  const url = PROXY + "?" + new URLSearchParams({ secret: SECRET, ...params, _t: Date.now() });
+  var pin = sessionStorage.getItem("cachedPin") || "";
+  const url = PROXY + "?" + new URLSearchParams({ secret: SECRET, pin: pin, ...params, _t: Date.now() });
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.json();
@@ -773,31 +774,12 @@ async function addCigarette() {
 }
 
 // ── PIN ──────────────────────────────────────────────────────────────────────
-var PIN_KEY = "appPin";
 var SESSION_KEY = "pinUnlocked";
 var pinBuffer = "";
-var pinMode = "unlock"; // "unlock" | "set_new" | "confirm_new"
-var pinNewTemp = "";
-
-function hashPin(pin) {
-  // Simple hash — not cryptographic but fine for personal use
-  var h = 0;
-  for (var i = 0; i < pin.length; i++) {
-    h = (Math.imul(31, h) + pin.charCodeAt(i)) | 0;
-  }
-  return String(h);
-}
 
 function initPin() {
-  // Already unlocked this session?
   if (sessionStorage.getItem(SESSION_KEY) === "1") {
     unlockApp(); return;
-  }
-  var stored = localStorage.getItem(PIN_KEY);
-  if (!stored) {
-    // First run — ask to set a PIN
-    pinMode = "set_new";
-    document.getElementById("pinPrompt").textContent = "Imposta un nuovo PIN (4 cifre)";
   }
   document.getElementById("pinScreen").style.display = "flex";
   document.getElementById("appContent").style.display = "none";
@@ -827,30 +809,31 @@ function updateDots() {
 }
 
 function processPin() {
-  if (pinMode === "unlock") {
-    var stored = localStorage.getItem(PIN_KEY);
-    if (hashPin(pinBuffer) === stored) {
-      sessionStorage.setItem(SESSION_KEY, "1");
-      unlockApp();
-    } else {
-      showPinError("PIN errato, riprova");
-    }
-  } else if (pinMode === "set_new") {
-    pinNewTemp = pinBuffer;
-    pinMode = "confirm_new";
-    document.getElementById("pinPrompt").textContent = "Conferma il PIN";
-    pinBuffer = ""; updateDots();
-  } else if (pinMode === "confirm_new") {
-    if (pinBuffer === pinNewTemp) {
-      localStorage.setItem(PIN_KEY, hashPin(pinBuffer));
-      sessionStorage.setItem(SESSION_KEY, "1");
-      unlockApp();
-    } else {
-      pinMode = "set_new";
-      pinNewTemp = "";
-      showPinError("I PIN non coincidono, ricomincia");
-    }
-  }
+  // Verify PIN against server
+  var pin = pinBuffer;
+  pinBuffer = "";
+  document.getElementById("pinPrompt").textContent = "Verifica...";
+  var url = PROXY + "?secret=" + SECRET + "&pin=" + encodeURIComponent(pin) + "&action=read&_t=" + Date.now();
+  fetch(url, {redirect: "follow"})
+    .then(function(r) { return r.json(); })
+    .then(function(json) {
+      if (json.error === "wrong_pin") {
+        document.getElementById("pinPrompt").textContent = "Inserisci il PIN per accedere";
+        showPinError("PIN errato, riprova");
+      } else if (json.error) {
+        document.getElementById("pinPrompt").textContent = "Inserisci il PIN per accedere";
+        showPinError("Errore: " + json.error);
+      } else {
+        // PIN ok — store session and load data from response
+        sessionStorage.setItem(SESSION_KEY, "1");
+        sessionStorage.setItem("cachedPin", pin);
+        unlockApp(json.rows);
+      }
+    })
+    .catch(function(e) {
+      document.getElementById("pinPrompt").textContent = "Inserisci il PIN per accedere";
+      showPinError("Errore di rete, riprova");
+    });
 }
 
 function showPinError(msg) {
@@ -859,27 +842,23 @@ function showPinError(msg) {
     var dot = document.getElementById("d" + i);
     dot.classList.add("error");
   }
-  pinBuffer = "";
-  setTimeout(updateDots, 400);
+  updateDots();
+  setTimeout(function() {
+    for (var i = 0; i < 4; i++)
+      document.getElementById("d" + i).classList.remove("error");
+  }, 500);
 }
 
-function unlockApp() {
+function unlockApp(rows) {
   document.getElementById("pinScreen").style.display = "none";
   document.getElementById("appContent").style.display = "block";
-  document.getElementById("pinChangeLink").style.display = "block";
-  loadData();
-}
-
-function showPinChange() {
-  pinMode = "set_new";
-  pinNewTemp = "";
-  pinBuffer = "";
-  updateDots();
-  document.getElementById("pinPrompt").textContent = "Imposta nuovo PIN (4 cifre)";
-  document.getElementById("pinError").textContent = "";
-  document.getElementById("pinScreen").style.display = "flex";
-  document.getElementById("appContent").style.display = "none";
-  sessionStorage.removeItem(SESSION_KEY);
+  if (rows) {
+    processedData = processRows(rows.slice(1));
+    updateKPI(processedData);
+    renderChart(processedData);
+  } else {
+    loadData();
+  }
 }
 
 // ── Collapsible guide ────────────────────────────────────────────────────────
@@ -936,17 +915,13 @@ function checkThresholdNotif(todayCount) {
   var label = document.getElementById("notifPermLabel");
   if (!label) return;
   if (!("Notification" in window)) {
-    label.textContent = "non supportate";
-    label.style.color = "#555";
+    label.textContent = "non supportate"; label.style.color = "#555";
   } else if (Notification.permission === "granted") {
-    label.textContent = "✅ concesso";
-    label.style.color = "#4ade80";
+    label.textContent = "✅ concesso"; label.style.color = "#4ade80";
   } else if (Notification.permission === "denied") {
-    label.textContent = "❌ negato";
-    label.style.color = "#f87171";
+    label.textContent = "❌ negato"; label.style.color = "#f87171";
   } else {
-    label.textContent = "non ancora richiesto";
-    label.style.color = "#555";
+    label.textContent = "non ancora richiesto"; label.style.color = "#555";
   }
   var saved = getThreshold();
   if (saved > 0) document.getElementById("notifThresholdInput").value = saved;
