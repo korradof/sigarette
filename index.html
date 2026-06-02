@@ -155,6 +155,40 @@
   }
   #pinChangeLink:hover { color: #555; }
 
+  /* PIN change modal */
+  #pinChangeModal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: none; align-items: center; justify-content: center;
+    z-index: 10000;
+  }
+  #pinChangeModal.open { display: flex; }
+  .modal-box {
+    background: #0f0f18; border: 1px solid #1a1a2a; border-radius: 16px;
+    padding: 28px 24px; width: 280px; text-align: center;
+  }
+  .modal-box h3 { font-size: 16px; font-weight: 800; color: #e0e0e0; margin-bottom: 6px; }
+  .modal-box p  { font-size: 11px; color: #555; margin-bottom: 16px; }
+  .modal-pin-dots { display: flex; gap: 12px; justify-content: center; margin-bottom: 16px; }
+  .modal-pin-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid #333; background: transparent; transition: all .15s;
+  }
+  .modal-pin-dot.filled { background: #818cf8; border-color: #818cf8; }
+  .modal-pin-dot.error  { background: #f87171; border-color: #f87171; }
+  .modal-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 12px; }
+  .modal-btn {
+    background: rgba(255,255,255,0.04); border: 1px solid #1a1a2a;
+    border-radius: 10px; color: #e0e0e0; font-size: 18px; font-weight: 700;
+    padding: 14px; cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .modal-btn:active { background: rgba(129,140,248,0.15); transform: scale(0.95); }
+  .modal-btn.del { font-size: 14px; color: #555; }
+  #modalError { color: #f87171; font-size: 11px; min-height: 16px; margin-bottom: 8px; }
+  .modal-cancel {
+    color: #444; font-size: 11px; cursor: pointer; text-decoration: underline; margin-top: 4px;
+    background: none; border: none; font-family: inherit;
+  }
+
   #toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
     background: #1a1a2a; border: 1px solid var(--green); color: var(--green);
@@ -322,11 +356,41 @@
     <button class="pin-btn del" onclick="pinDel()">⌫</button>
   </div>
   <div id="pinError"></div>
-  <div style="color:#333;font-size:10px;margin-top:20px">Per cambiare PIN modifica Apps Script</div>
+  <div id="pinChangeLink" onclick="showPinChangeUI()" style="color:#444;font-size:11px;margin-top:20px;cursor:pointer;text-decoration:underline">🔑 Cambia PIN</div>
 </div>
 
 <div class="footer">live · Google Apps Script proxy · Google Sheets</div>
 <div id="toast">✅ Sigaretta registrata!</div>
+
+<!-- PIN Change Modal -->
+<div id="pinChangeModal">
+  <div class="modal-box">
+    <h3>🔑 Cambia PIN</h3>
+    <p id="modalPrompt">Inserisci il nuovo PIN (4 cifre)</p>
+    <div class="modal-pin-dots">
+      <div class="modal-pin-dot" id="md0"></div>
+      <div class="modal-pin-dot" id="md1"></div>
+      <div class="modal-pin-dot" id="md2"></div>
+      <div class="modal-pin-dot" id="md3"></div>
+    </div>
+    <div class="modal-grid">
+      <button class="modal-btn" onclick="modalKey('1')">1</button>
+      <button class="modal-btn" onclick="modalKey('2')">2</button>
+      <button class="modal-btn" onclick="modalKey('3')">3</button>
+      <button class="modal-btn" onclick="modalKey('4')">4</button>
+      <button class="modal-btn" onclick="modalKey('5')">5</button>
+      <button class="modal-btn" onclick="modalKey('6')">6</button>
+      <button class="modal-btn" onclick="modalKey('7')">7</button>
+      <button class="modal-btn" onclick="modalKey('8')">8</button>
+      <button class="modal-btn" onclick="modalKey('9')">9</button>
+      <button class="modal-btn" onclick="modalKey('')" style="visibility:hidden"></button>
+      <button class="modal-btn" onclick="modalKey('0')">0</button>
+      <button class="modal-btn del" onclick="modalDel()">⌫</button>
+    </div>
+    <div id="modalError"></div>
+    <button class="modal-cancel" onclick="closeModal()">Annulla</button>
+  </div>
+</div>
 
 <script>
 const PROXY = "https://script.google.com/macros/s/AKfycbz65YLgLPsN-OKHrI19O8xLP-Bh--e2fg64hBNThTHfFyj_3VLA7yfzrSyO6-vWbCvtvw/exec";
@@ -858,6 +922,101 @@ function unlockApp(rows) {
     renderChart(processedData);
   } else {
     loadData();
+  }
+}
+
+// ── PIN Change Modal ─────────────────────────────────────────────────────────
+var modalStep = "new";  // "new" | "confirm"
+var modalBuf = "";
+var modalNewPin = "";
+
+function showPinChangeUI() {
+  modalStep = "new";
+  modalBuf = "";
+  modalNewPin = "";
+  document.getElementById("modalPrompt").textContent = "Inserisci il nuovo PIN (4 cifre)";
+  document.getElementById("modalError").textContent = "";
+  updateModalDots();
+  document.getElementById("pinChangeModal").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("pinChangeModal").classList.remove("open");
+  modalBuf = "";
+  updateModalDots();
+}
+
+function modalKey(digit) {
+  if (modalBuf.length >= 4) return;
+  modalBuf += digit;
+  updateModalDots();
+  if (modalBuf.length === 4) setTimeout(processModalPin, 120);
+}
+
+function modalDel() {
+  modalBuf = modalBuf.slice(0, -1);
+  updateModalDots();
+  document.getElementById("modalError").textContent = "";
+}
+
+function updateModalDots() {
+  for (var i = 0; i < 4; i++) {
+    var dot = document.getElementById("md" + i);
+    dot.classList.toggle("filled", i < modalBuf.length);
+    dot.classList.remove("error");
+  }
+}
+
+function showModalError(msg) {
+  document.getElementById("modalError").textContent = msg;
+  for (var i = 0; i < 4; i++)
+    document.getElementById("md" + i).classList.add("error");
+  modalBuf = "";
+  setTimeout(updateModalDots, 400);
+}
+
+function processModalPin() {
+  if (modalStep === "new") {
+    modalNewPin = modalBuf;
+    modalBuf = "";
+    modalStep = "confirm";
+    document.getElementById("modalPrompt").textContent = "Conferma il nuovo PIN";
+    document.getElementById("modalError").textContent = "";
+    updateModalDots();
+  } else {
+    if (modalBuf !== modalNewPin) {
+      modalStep = "new";
+      modalNewPin = "";
+      showModalError("I PIN non coincidono, ricomincia");
+      document.getElementById("modalPrompt").textContent = "Inserisci il nuovo PIN (4 cifre)";
+      return;
+    }
+    // Send to server
+    var newPin = modalBuf;
+    var pin = sessionStorage.getItem("cachedPin") || "";
+    var url = PROXY + "?secret=" + SECRET + "&pin=" + encodeURIComponent(pin) +
+              "&action=change_pin&pin_new=" + encodeURIComponent(newPin) + "&_t=" + Date.now();
+    document.getElementById("modalPrompt").textContent = "Salvataggio...";
+    fetch(url, {redirect: "follow"})
+      .then(function(r) { return r.json(); })
+      .then(function(json) {
+        if (json.ok) {
+          sessionStorage.setItem("cachedPin", newPin);
+          closeModal();
+          var toast = document.getElementById("toast");
+          toast.textContent = "✅ PIN aggiornato!";
+          toast.classList.add("show");
+          setTimeout(function() { toast.classList.remove("show"); }, 2500);
+        } else {
+          showModalError("Errore: " + (json.error || "sconosciuto"));
+          document.getElementById("modalPrompt").textContent = "Inserisci il nuovo PIN (4 cifre)";
+          modalStep = "new";
+        }
+      })
+      .catch(function() {
+        showModalError("Errore di rete, riprova");
+        modalStep = "new";
+      });
   }
 }
 
