@@ -166,6 +166,8 @@
 </head>
 <body>
 
+<div id="appContent" style="display:none">
+
 <div class="eyebrow">Monitoraggio Personale · Live</div>
 <h1>🚬 Sigarette Live</h1>
 <div class="subtitle">Google Sheets · Apps Script proxy</div>
@@ -292,8 +294,10 @@
   </div>
 </div>
 
+</div><!-- /appContent -->
+
 <!-- PIN Screen -->
-<div id="pinScreen">
+<div id="pinScreen" style="display:none">
   <div style="font-size:11px;letter-spacing:4px;color:#444;text-transform:uppercase;margin-bottom:8px">ACCESSO</div>
   <h2>🚬 Sigarette Live</h2>
   <p id="pinPrompt">Inserisci il PIN per accedere</p>
@@ -796,6 +800,7 @@ function initPin() {
     document.getElementById("pinPrompt").textContent = "Imposta un nuovo PIN (4 cifre)";
   }
   document.getElementById("pinScreen").style.display = "flex";
+  document.getElementById("appContent").style.display = "none";
 }
 
 function pinKey(digit) {
@@ -860,6 +865,7 @@ function showPinError(msg) {
 
 function unlockApp() {
   document.getElementById("pinScreen").style.display = "none";
+  document.getElementById("appContent").style.display = "block";
   document.getElementById("pinChangeLink").style.display = "block";
   loadData();
 }
@@ -872,6 +878,7 @@ function showPinChange() {
   document.getElementById("pinPrompt").textContent = "Imposta nuovo PIN (4 cifre)";
   document.getElementById("pinError").textContent = "";
   document.getElementById("pinScreen").style.display = "flex";
+  document.getElementById("appContent").style.display = "none";
   sessionStorage.removeItem(SESSION_KEY);
 }
 
