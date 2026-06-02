@@ -511,11 +511,7 @@ function processRows(rows) {
   const daily = {};
   const hourly = Array(24).fill(0);
 
-  // Debug: last 3 DataNormale values
-  if (rows.length > 0) {
-    var last3 = rows.slice(-3).map(function(r) { return String(r[5]); });
-    console.log("Last 3 DataNormale: " + last3.join(" | "));
-  }
+
 
   rows.forEach(r => {
     const dateStr = r[5];
@@ -618,13 +614,7 @@ function processRows(rows) {
     return n;
   }
 
-  // Debug first 3 rows raw values
-  if (rows.length > 1) {
-    console.log("[GPS RAW] row1:", JSON.stringify([rows[1][0], rows[1][1], rows[1][5]]));
-    console.log("[GPS RAW] row2:", JSON.stringify([rows[2] ? rows[2][0] : "?", rows[2] ? rows[2][1] : "?"]));
-    var lastRow = rows[rows.length-1];
-    console.log("[GPS RAW] last:", JSON.stringify([lastRow[0], lastRow[1], lastRow[5]]));
-  }
+
 
   rows.forEach(function(r) {
     if (!r[5] || r[5] === "DataNormale") return; // skip header
@@ -635,7 +625,7 @@ function processRows(rows) {
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) { noGpsCount++; return; }
     var dist = haversine(lat, lon, HOME_LAT, HOME_LON);
     var atHome = dist <= HOME_RADIUS_M;
-    console.log("[GPS] lat:" + lat + " lon:" + lon + " dist:" + Math.round(dist) + "m atHome:" + atHome);
+
     if (atHome) homeCount++; else outCount++;
     gpsPoints.push({ lat: lat, lon: lon, atHome: atHome, mappa: String(r[2] || "") });
   });
@@ -657,7 +647,7 @@ function processRows(rows) {
   });
   clusters.sort(function(a,b) { return b.count - a.count; });
 
-  console.log("[GPS] points:", gpsPoints.length, "noGps:", noGpsCount, "home:", homeCount, "out:", outCount, "clusters:", clusters.length);
+
 
   return { withMA, hourlyArr, avg, max, min, maxDay, minDay, today, total, days: dailyArr.length,
            weekCurrent, weekPrev, totalCurrent, totalPrev,
@@ -939,7 +929,7 @@ function renderPosizione(d) {
       .bindPopup("🏠 Casa").addTo(leafletMap);
 
     // Cluster markers
-    console.log("[MAP] rendering clusters:", d.clusters.length);
+
     d.clusters.slice(0, 30).forEach(function(c, i) {
       var sz = Math.min(28, Math.max(14, 10 + c.count));
       var color = c.atHome ? "#4ade80" : "#818cf8";
@@ -954,6 +944,13 @@ function renderPosizione(d) {
         .bindPopup((c.atHome ? "🏠 Casa" : "📍 Luogo " + (i+1)) + "<br><b>" + c.count + " sigarette</b>")
         .addTo(leafletMap);
     });
+
+    // Fit map to cluster bounds + home marker
+    if (d.clusters.length > 0) {
+      var bounds = d.clusters.slice(0, 30).map(function(c) { return [c.lat, c.lon]; });
+      bounds.push([HOME_LAT_MAP, HOME_LON_MAP]);
+      leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+    }
   }, 150);
 }
 
