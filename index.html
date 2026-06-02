@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🚬 Sigarette Live</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -189,6 +191,23 @@
     background: none; border: none; font-family: inherit;
   }
 
+  /* Map */
+  #mapContainer { height: 260px; border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+  .leaflet-container { background: #111; }
+  .loc-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .loc-card { background: rgba(255,255,255,0.03); border: 1px solid #1a1a2a; border-radius: 10px; padding: 12px 14px; }
+  .loc-card-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #555; margin-bottom: 4px; }
+  .loc-card-value { font-size: 22px; font-weight: 800; }
+  .loc-card-sub { font-size: 10px; color: #555; margin-top: 2px; }
+  .cluster-list { margin-top: 12px; }
+  .cluster-item { display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,0.02);
+    border: 1px solid #1a1a2a; margin-bottom: 6px; }
+  .cluster-name { font-size: 12px; color: #aaa; }
+  .cluster-bar-wrap { flex: 1; margin: 0 12px; height: 4px; background: #111; border-radius: 2px; }
+  .cluster-bar { height: 100%; border-radius: 2px; background: #818cf8; }
+  .cluster-count { font-size: 12px; color: #818cf8; font-weight: 700; min-width: 30px; text-align: right; }
+
   #toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
     background: #1a1a2a; border: 1px solid var(--green); color: var(--green);
@@ -255,6 +274,7 @@
   <button class="tab active" onclick="setView('giornaliero',this)">giornaliero</button>
   <button class="tab" onclick="setView('orario',this)">orario</button>
   <button class="tab" onclick="setView('settimanale',this)">settimane</button>
+  <button class="tab" onclick="setView('posizione',this)">posizione</button>
 </div>
 
 <div class="chart-box">
@@ -266,6 +286,24 @@
     <span><span style="color:#f87171">■</span> &gt;16 alto</span>
     <span><span style="color:#f87171">—</span> MA7</span>
   </div>
+</div>
+
+<!-- Posizione tab content (hidden by default) -->
+<div id="posizioneView" style="display:none">
+  <div id="mapContainer"></div>
+  <div class="loc-summary">
+    <div class="loc-card">
+      <div class="loc-card-label">A casa</div>
+      <div class="loc-card-value" id="locHome" style="color:#4ade80">–</div>
+      <div class="loc-card-sub" id="locHomePct">–</div>
+    </div>
+    <div class="loc-card">
+      <div class="loc-card-label">Fuori casa</div>
+      <div class="loc-card-value" id="locOut" style="color:#f87171">–</div>
+      <div class="loc-card-sub" id="locOutPct">–</div>
+    </div>
+  </div>
+  <div class="cluster-list" id="clusterList"></div>
 </div>
 
 <!-- Insight -->
@@ -552,7 +590,53 @@ function processRows(rows) {
   var totalCurrent = weekCurrent.reduce(function(a,b){return a+b.count;},0);
   var totalPrev    = weekPrev.reduce(function(a,b){return a+b.count;},0);
 
-  return { withMA, hourlyArr, avg, max, min, maxDay, minDay, today, total, days: dailyArr.length, weekCurrent, weekPrev, totalCurrent, totalPrev };
+  // ── GPS processing ────────────────────────────────────────────────────────
+  var HOME_LAT = 44.89287765907025;
+  var HOME_LON = 7.331584258314907;
+  var HOME_RADIUS_M = 200; // meters
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var dLat = (lat2-lat1)*Math.PI/180;
+    var dLon = (lon2-lon1)*Math.PI/180;
+    var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+            Math.sin(dLon/2)*Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  var gpsPoints = [];
+  var homeCount = 0, outCount = 0, noGpsCount = 0;
+
+  rows.forEach(function(r) {
+    var lat = parseFloat(r[0]);
+    var lon = parseFloat(r[1]);
+    if (isNaN(lat) || isNaN(lon) || r[0] === "--") { noGpsCount++; return; }
+    var dist = haversine(lat, lon, HOME_LAT, HOME_LON);
+    var atHome = dist <= HOME_RADIUS_M;
+    if (atHome) homeCount++; else outCount++;
+    gpsPoints.push({ lat: lat, lon: lon, atHome: atHome, mappa: r[2] });
+  });
+
+  // Simple clustering: group points within 100m of each other
+  var clusters = [];
+  gpsPoints.forEach(function(p) {
+    var found = false;
+    for (var i = 0; i < clusters.length; i++) {
+      if (haversine(p.lat, p.lon, clusters[i].lat, clusters[i].lon) < 150) {
+        clusters[i].count++;
+        clusters[i].lat = (clusters[i].lat * (clusters[i].count-1) + p.lat) / clusters[i].count;
+        clusters[i].lon = (clusters[i].lon * (clusters[i].count-1) + p.lon) / clusters[i].count;
+        found = true; break;
+      }
+    }
+    if (!found) clusters.push({ lat: p.lat, lon: p.lon, count: 1, atHome: p.atHome });
+  });
+  clusters.sort(function(a,b) { return b.count - a.count; });
+
+  return { withMA, hourlyArr, avg, max, min, maxDay, minDay, today, total, days: dailyArr.length,
+           weekCurrent, weekPrev, totalCurrent, totalPrev,
+           gpsPoints, clusters, homeCount, outCount, noGpsCount };
 }
 
 // ── UI updates ────────────────────────────────────────────────────────────────
@@ -774,7 +858,82 @@ function setView(v, btn) {
   currentView = v;
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
   btn.classList.add("active");
-  if (processedData) renderChart(processedData);
+  var posView = document.getElementById("posizioneView");
+  var chartBox = document.querySelector(".chart-box");
+  if (v === "posizione") {
+    posView.style.display = "block";
+    chartBox.style.display = "none";
+    if (processedData) renderPosizione(processedData);
+  } else {
+    posView.style.display = "none";
+    chartBox.style.display = "block";
+    if (processedData) renderChart(processedData);
+  }
+}
+
+var leafletMap = null;
+
+function renderPosizione(d) {
+  // Home/Out cards
+  var total = d.homeCount + d.outCount;
+  document.getElementById("locHome").textContent = d.homeCount;
+  document.getElementById("locHomePct").textContent = total ? Math.round(d.homeCount/total*100) + "% del totale" : "–";
+  document.getElementById("locOut").textContent = d.outCount;
+  document.getElementById("locOutPct").textContent = total ? Math.round(d.outCount/total*100) + "% del totale" : "–";
+
+  // Cluster list (top 5)
+  var list = document.getElementById("clusterList");
+  var top = d.clusters.slice(0,5);
+  var maxC = top.length ? top[0].count : 1;
+  list.innerHTML = top.map(function(c, i) {
+    var label = c.atHome ? "🏠 Casa" : "📍 Luogo " + (i+1);
+    var pct = Math.round(c.count / maxC * 100);
+    return '<div class="cluster-item">' +
+      '<span class="cluster-name">' + label + '</span>' +
+      '<div class="cluster-bar-wrap"><div class="cluster-bar" style="width:' + pct + '%"></div></div>' +
+      '<span class="cluster-count">' + c.count + '</span>' +
+    '</div>';
+  }).join("");
+
+  // Leaflet map
+  setTimeout(function() {
+    if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+    var center = d.gpsPoints.length
+      ? [d.gpsPoints[0].lat, d.gpsPoints[0].lon]
+      : [44.89287765907025, 7.331584258314907];
+    leafletMap = L.map("mapContainer", { zoomControl: true }).setView(center, 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap", maxZoom: 19
+    }).addTo(leafletMap);
+
+    // Home marker
+    var homeIcon = L.divIcon({ html: "🏠", className: "", iconSize: [24,24], iconAnchor: [12,12] });
+    L.marker([44.89287765907025, 7.331584258314907], { icon: homeIcon })
+      .bindPopup("Casa").addTo(leafletMap);
+
+    // Cluster markers
+    d.clusters.slice(0,20).forEach(function(c) {
+      var r = Math.min(20, Math.max(8, c.count * 2));
+      var color = c.atHome ? "#4ade80" : "#818cf8";
+      var icon = L.divIcon({
+        html: '<div style="width:' + r + 'px;height:' + r + 'px;border-radius:50%;' +
+              'background:' + color + ';opacity:0.8;border:2px solid #fff;' +
+              'display:flex;align-items:center;justify-content:center;' +
+              'font-size:9px;font-weight:700;color:#000;">' + c.count + '</div>',
+        className: "", iconSize: [r, r], iconAnchor: [r/2, r/2]
+      });
+      L.marker([c.lat, c.lon], { icon: icon })
+        .bindPopup((c.atHome ? "🏠 Casa" : "📍 Luogo") + ": " + c.count + " sigarette")
+        .addTo(leafletMap);
+    });
+
+    // Fit bounds
+    if (d.gpsPoints.length > 0) {
+      var latlngs = d.clusters.slice(0,20).map(function(c) { return [c.lat, c.lon]; });
+      latlngs.push([44.89287765907025, 7.331584258314907]);
+      leafletMap.fitBounds(latlngs, { padding: [30, 30] });
+    }
+  }, 100);
 }
 
 function getPosition() {
