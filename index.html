@@ -591,8 +591,8 @@ function processRows(rows) {
   var totalPrev    = weekPrev.reduce(function(a,b){return a+b.count;},0);
 
   // ── GPS processing ────────────────────────────────────────────────────────
-  var HOME_LAT = 44.89287765907025;
-  var HOME_LON = 7.331584258314907;
+  var HOME_LAT = 44.890280;
+  var HOME_LON = 7.332644;
   var HOME_RADIUS_M = 200; // meters
 
   function haversine(lat1, lon1, lat2, lon2) {
@@ -609,9 +609,21 @@ function processRows(rows) {
   var homeCount = 0, outCount = 0, noGpsCount = 0;
 
   function parseCoord(val) {
-    if (!val || val === "--") return NaN;
-    // Replace comma decimal separator with dot (Italian locale)
-    return parseFloat(String(val).replace(",", "."));
+    if (val === null || val === undefined || val === "" || val === "--") return NaN;
+    // If already a number, use directly
+    if (typeof val === "number") return isFinite(val) ? val : NaN;
+    // String: replace comma decimal separator (Italian locale)
+    var s = String(val).trim().replace(",", ".");
+    var n = parseFloat(s);
+    return n;
+  }
+
+  // Debug first 3 rows raw values
+  if (rows.length > 1) {
+    console.log("[GPS RAW] row1:", JSON.stringify([rows[1][0], rows[1][1], rows[1][5]]));
+    console.log("[GPS RAW] row2:", JSON.stringify([rows[2] ? rows[2][0] : "?", rows[2] ? rows[2][1] : "?"]));
+    var lastRow = rows[rows.length-1];
+    console.log("[GPS RAW] last:", JSON.stringify([lastRow[0], lastRow[1], lastRow[5]]));
   }
 
   rows.forEach(function(r) {
@@ -623,6 +635,7 @@ function processRows(rows) {
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) { noGpsCount++; return; }
     var dist = haversine(lat, lon, HOME_LAT, HOME_LON);
     var atHome = dist <= HOME_RADIUS_M;
+    console.log("[GPS] lat:" + lat + " lon:" + lon + " dist:" + Math.round(dist) + "m atHome:" + atHome);
     if (atHome) homeCount++; else outCount++;
     gpsPoints.push({ lat: lat, lon: lon, atHome: atHome, mappa: String(r[2] || "") });
   });
@@ -908,8 +921,8 @@ function renderPosizione(d) {
   }).join("");
 
   // Leaflet map
-  var HOME_LAT_MAP = 44.89287765907025;
-  var HOME_LON_MAP = 7.331584258314907;
+  var HOME_LAT_MAP = 44.890280;
+  var HOME_LON_MAP = 7.332644;
   setTimeout(function() {
     if (leafletMap) { leafletMap.remove(); leafletMap = null; }
     leafletMap = L.map("mapContainer", { zoomControl: true }).setView([HOME_LAT_MAP, HOME_LON_MAP], 10);
