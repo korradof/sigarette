@@ -110,6 +110,928 @@
   .error { color: var(--red); font-size: 12px; text-align: center; margin-bottom: 12px; }
   .footer { text-align: center; color: #1e1e2e; font-size: 9px; margin-top: 20px; }
 
+  /* PIN screen */
+  #pinScreen {
+    position: fixed; inset: 0; background: #0a0a0f;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 9999; padding: 30px;
+  }
+  #pinScreen h2 {
+    font-size: 22px; font-weight: 900; margin-bottom: 6px;
+    background: linear-gradient(135deg,#f87171,#fbbf24);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  #pinScreen p { color: #444; font-size: 12px; margin-bottom: 28px; }
+  .pin-dots {
+    display: flex; gap: 14px; margin-bottom: 28px;
+  }
+  .pin-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid #333; background: transparent;
+    transition: background .15s, border-color .15s;
+  }
+  .pin-dot.filled { background: #f87171; border-color: #f87171; }
+  .pin-dot.error  { background: #f87171; border-color: #f87171; animation: shake .3s; }
+  @keyframes shake {
+    0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)}
+  }
+  .pin-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 12px; width: 220px;
+  }
+  .pin-btn {
+    background: rgba(255,255,255,0.04); border: 1px solid #1a1a2a;
+    border-radius: 12px; color: #e0e0e0; font-size: 20px; font-weight: 700;
+    padding: 16px; cursor: pointer; font-family: inherit;
+    transition: background .15s, transform .1s;
+  }
+  .pin-btn:active { background: rgba(248,113,113,0.15); transform: scale(0.95); }
+  .pin-btn.del { font-size: 16px; color: #555; }
+  #pinError { color: #f87171; font-size: 12px; margin-top: 14px; min-height: 18px; }
+  #pinChangeLink {
+    color: #333; font-size: 11px; margin-top: 20px;
+    cursor: pointer; text-decoration: underline;
+  }
+  #pinChangeLink:hover { color: #555; }
+
+  #toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: #1a1a2a; border: 1px solid var(--green); color: var(--green);
+    padding: 10px 20px; border-radius: 24px; font-size: 13px; font-weight: 700;
+    transition: transform .3s ease; z-index: 999; pointer-events: none;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="eyebrow">Monitoraggio Personale · Live</div>
+<h1>🚬 Sigarette Live</h1>
+<div class="subtitle">Google Sheets · Apps Script proxy</div>
+
+<div class="actions">
+  <button class="btn-add" id="btnAdd" onclick="addCigarette()">🚬 +1 Sigaretta</button>
+  <button class="btn-refresh" id="btnRefresh" onclick="loadData()">🔄 Aggiorna</button>
+</div>
+
+<!-- Obiettivo giornaliero -->
+<div id="goalBox" style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:16px;flex-wrap:wrap;">
+  <span style="font-size:12px;color:#555;">🎯 Obiettivo giornaliero:</span>
+  <input id="goalInput" type="number" min="1" max="40" value="15"
+    style="width:60px;background:#0d0d18;border:1px solid #333;border-radius:8px;color:#fbbf24;
+           font-size:16px;font-weight:700;text-align:center;padding:4px 8px;font-family:inherit;"
+    onchange="saveGoal(this.value)" oninput="saveGoal(this.value)">
+  <span style="font-size:11px;color:#444;">sigarette/giorno</span>
+</div>
+
+<div id="error" class="error" style="display:none"></div>
+
+<!-- KPI -->
+<div class="kpi-grid" id="kpiGrid">
+  <div class="kpi" style="grid-column:span 3">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+    <div>
+      <div class="kpi-label">Oggi</div>
+      <div class="kpi-value" id="kToday" style="color:#fbbf24">–</div>
+      <div class="kpi-sub" id="kTodayRisk">–</div>
+    </div>
+    <div style="text-align:right">
+      <div class="kpi-label">Obiettivo</div>
+      <div class="kpi-value" id="kGoalVal" style="color:#818cf8">–</div>
+      <div class="kpi-sub" id="kGoalRemain"></div>
+    </div>
+  </div>
+  <div style="background:#111;border-radius:6px;height:8px;overflow:hidden">
+    <div id="goalBar" style="height:100%;border-radius:6px;transition:width .4s ease;width:0%"></div>
+  </div>
+</div>
+  <div class="kpi"><div class="kpi-label">Media/giorno</div><div class="kpi-value" id="kAvg" style="color:#fbbf24">–</div><div class="kpi-sub">periodo</div></div>
+  <div class="kpi"><div class="kpi-label">Totale</div><div class="kpi-value" id="kTotal" style="color:#818cf8">–</div><div class="kpi-sub" id="kDays">– giorni</div></div>
+  <div class="kpi-wide">
+    <div class="kpi"><div class="kpi-label">Record max</div><div class="kpi-value" id="kMax" style="color:#f87171">–</div><div class="kpi-sub" id="kMaxDay">–</div></div>
+    <div class="kpi"><div class="kpi-label">Giorno min</div><div class="kpi-value" id="kMin" style="color:#4ade80">–</div><div class="kpi-sub" id="kMinDay">–</div></div>
+  </div>
+</div>
+
+<!-- Tabs + Chart -->
+<div class="tabs">
+  <button class="tab active" onclick="setView('giornaliero',this)">giornaliero</button>
+  <button class="tab" onclick="setView('orario',this)">orario</button>
+  <button class="tab" onclick="setView('settimanale',this)">settimane</button>
+</div>
+
+<div class="chart-box">
+  <div class="chart-title" id="chartTitle">SIGARETTE / GIORNO + media mobile 7gg</div>
+  <div class="chart-wrap"><canvas id="myChart"></canvas></div>
+  <div class="legend" id="legend">
+    <span><span style="color:#4ade80">■</span> ≤10 basso</span>
+    <span><span style="color:#fbbf24">■</span> 11–16 medio</span>
+    <span><span style="color:#f87171">■</span> &gt;16 alto</span>
+    <span><span style="color:#f87171">—</span> MA7</span>
+  </div>
+</div>
+
+<!-- Insight -->
+<div class="insight">
+  <div class="insight-title">📊 Insight</div>
+  <div class="insight-body" id="insight">Caricamento...</div>
+</div>
+
+<!-- Notification threshold -->
+<div class="guide" style="border-color:rgba(251,191,36,0.2);background:rgba(251,191,36,0.03)">
+  <div class="guide-title" style="color:#fbbf24">🔔 Notifica soglia giornaliera</div>
+  <div class="guide-body" style="display:block;margin-top:10px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <span style="font-size:12px;color:#666;">Avvisami quando raggiungo</span>
+      <input id="notifThresholdInput" type="number" min="1" max="40" value="0"
+        style="width:55px;background:#0d0d18;border:1px solid #333;border-radius:8px;
+               color:#fbbf24;font-size:15px;font-weight:700;text-align:center;
+               padding:4px 6px;font-family:inherit;"
+        oninput="saveThreshold(this.value)">
+      <span style="font-size:12px;color:#666;">sigarette</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button onclick="requestNotifPermission()"
+        style="padding:7px 16px;border-radius:20px;border:none;cursor:pointer;
+               background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#000;
+               font-weight:700;font-size:12px;font-family:inherit;">
+        🔔 Abilita notifiche
+      </button>
+      <span id="notifPermStatus" style="font-size:11px;color:#444;">
+        Permesso: <span id="notifPermLabel"></span>
+      </span>
+    </div>
+    <div style="color:#333;font-size:10px;margin-top:8px">
+      💡 La notifica appare una volta al giorno quando superi la soglia. Imposta 0 per disabilitare.
+      Le notifiche funzionano solo se la pagina è aperta nel browser.
+    </div>
+  </div>
+</div>
+
+<!-- HTTP Shortcuts Guide -->
+<div class="guide">
+  <div class="guide-title" onclick="toggleGuide()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+    <span>📱 HTTP Shortcuts — Configurazione completa</span>
+    <span id="guideChevron" style="font-size:14px;transition:transform .3s">▼</span>
+  </div>
+  <div class="guide-body" id="guideBody" style="display:none;margin-top:10px">
+    <div style="color:#818cf8;font-size:10px;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Variabili Globali</div>
+    <div><strong>1.</strong> Menu → <strong>Variabili Globali</strong> → crea 3 variabili di tipo <strong>Timestamp</strong>:</div>
+    <div class="code-block">ts_data  →  MMMM d, yyyy 'at' hh:mma<br>ts_date  →  yyyy-MM-dd<br>ts_week  →  w</div>
+    <div><strong>2.</strong> Crea 3 variabili di tipo <strong>Static Variable</strong> (vuote):</div>
+    <div class="code-block">lat &nbsp;&nbsp;→ (vuota)<br>lon &nbsp;&nbsp;→ (vuota)<br>mappa →  (vuota)</div>
+
+    <div style="color:#818cf8;font-size:10px;margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Shortcut</div>
+    <div><strong>3.</strong> Nuovo shortcut → <strong>HTTP Request</strong> → metodo <code>GET</code></div>
+    <div><strong>4.</strong> URL:</div>
+    <div class="code-block" id="guideUrl"></div>
+    <div><strong>5.</strong> Sezione <strong>Scripting → Pre-request</strong>, incolla:</div>
+    <div class="code-block">var loc = getLocation();<br>if (loc.status == 'success') {<br>&nbsp;&nbsp;var p = loc.coordinates.split(',');<br>&nbsp;&nbsp;setVariable('lat', p[0].trim());<br>&nbsp;&nbsp;setVariable('lon', p[1].trim());<br>&nbsp;&nbsp;setVariable('mappa','https://www.google.com/maps?q='+p[0].trim()+','+p[1].trim());<br>} else {<br>&nbsp;&nbsp;setVariable('lat','--');<br>&nbsp;&nbsp;setVariable('lon','--');<br>&nbsp;&nbsp;setVariable('mappa','');<br>}</div>
+    <div><strong>6.</strong> Aggiungi come <strong>widget sul desktop</strong> → un tap = una sigaretta registrata ✅</div>
+  </div>
+</div>
+
+<!-- PIN Screen -->
+<div id="pinScreen">
+  <div style="font-size:11px;letter-spacing:4px;color:#444;text-transform:uppercase;margin-bottom:8px">ACCESSO</div>
+  <h2>🚬 Sigarette Live</h2>
+  <p id="pinPrompt">Inserisci il PIN per accedere</p>
+  <div class="pin-dots">
+    <div class="pin-dot" id="d0"></div>
+    <div class="pin-dot" id="d1"></div>
+    <div class="pin-dot" id="d2"></div>
+    <div class="pin-dot" id="d3"></div>
+  </div>
+  <div class="pin-grid">
+    <button class="pin-btn" onclick="pinKey('1')">1</button>
+    <button class="pin-btn" onclick="pinKey('2')">2</button>
+    <button class="pin-btn" onclick="pinKey('3')">3</button>
+    <button class="pin-btn" onclick="pinKey('4')">4</button>
+    <button class="pin-btn" onclick="pinKey('5')">5</button>
+    <button class="pin-btn" onclick="pinKey('6')">6</button>
+    <button class="pin-btn" onclick="pinKey('7')">7</button>
+    <button class="pin-btn" onclick="pinKey('8')">8</button>
+    <button class="pin-btn" onclick="pinKey('9')">9</button>
+    <button class="pin-btn" onclick="pinKey('')" style="visibility:hidden"></button>
+    <button class="pin-btn" onclick="pinKey('0')">0</button>
+    <button class="pin-btn del" onclick="pinDel()">⌫</button>
+  </div>
+  <div id="pinError"></div>
+  <div id="pinChangeLink" onclick="showPinChange()" style="display:none">Cambia PIN</div>
+</div>
+
+<div class="footer">live · Google Apps Script proxy · Google Sheets</div>
+<div id="toast">✅ Sigaretta registrata!</div>
+
+<script>
+const PROXY = "https://script.google.com/macros/s/AKfycbz65YLgLPsN-OKHrI19O8xLP-Bh--e2fg64hBNThTHfFyj_3VLA7yfzrSyO6-vWbCvtvw/exec";
+const SECRET = "sigarette2026";
+
+// Build the full GET URL for HTTP Shortcuts
+(function() {
+  const row = '["{{location.latitude}}","{{location.longitude}}","https://www.google.com/maps?q={{location.latitude}},{{location.longitude}}","{{ts_data}}","1","{{ts_date}}","{{ts_week}}"]';
+  const url = PROXY + "?secret=" + SECRET + "&action=append&row=" + encodeURIComponent(row)
+    .replace(encodeURIComponent("{{location.latitude}}"), "{{location.latitude}}")
+    .replace(encodeURIComponent("{{location.longitude}}"), "{{location.longitude}}")
+    .replace(encodeURIComponent("{{ts_data}}"), "{{ts_data}}")
+    .replace(encodeURIComponent("{{ts_date}}"), "{{ts_date}}")
+    .replace(encodeURIComponent("{{ts_week}}"), "{{ts_week}}");
+  document.getElementById("guideUrl").textContent = url;
+})();
+
+let chart = null;
+let currentView = "giornaliero";
+let processedData = null;
+
+// ── data processing ──────────────────────────────────────────────────────────
+function parseDate(raw) {
+  if (!raw || raw === "--") return null;
+  try {
+    const s = String(raw).trim();
+
+    // "April 15, 2026 at 06:44AM" or "April 15, 2026 at 6:44AM"
+    const m1 = s.match(/(\w+ \d+, \d+) at (\d+):(\d+)(AM|PM)/i);
+    if (m1) {
+      let h = parseInt(m1[2]);
+      const min = parseInt(m1[3]);
+      const ap = m1[4].toUpperCase();
+      if (ap === "AM" && h === 12) h = 0;
+      if (ap === "PM" && h !== 12) h += 12;
+      const d = new Date(m1[1]);
+      if (!isNaN(d)) { d.setHours(h, min, 0); return d; }
+    }
+
+    // ISO "2026-04-15T06:44:00" or "2026-04-15 06:44:00"
+    const m2 = s.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})/);
+    if (m2) {
+      const d = new Date(`${m2[1]}T${m2[2]}:${m2[3]}:00`);
+      if (!isNaN(d)) return d;
+    }
+
+    // Excel serial number (days since 1899-12-30)
+    const num = parseFloat(s);
+    if (!isNaN(num) && num > 40000 && num < 60000) {
+      const d = new Date((num - 25569) * 86400000);
+      if (!isNaN(d)) return d;
+    }
+
+    // Generic fallback
+    const d = new Date(s);
+    if (!isNaN(d)) return d;
+  } catch(e) {}
+  return null;
+}
+
+function fmtDate(d) {
+  return String(d.getDate()).padStart(2,"0") + "/" + String(d.getMonth()+1).padStart(2,"0");
+}
+
+function getColor(n) {
+  if (n <= 10) return "#4ade80";
+  if (n <= 16) return "#fbbf24";
+  return "#f87171";
+}
+
+function getRisk(n) {
+  if (n <= 10) return "Basso 🟢";
+  if (n <= 16) return "Medio 🟡";
+  return "Alto 🔴";
+}
+
+function processRows(rows) {
+  const daily = {};
+  const hourly = Array(24).fill(0);
+
+  // Debug: last 3 DataNormale values
+  if (rows.length > 0) {
+    var last3 = rows.slice(-3).map(function(r) { return String(r[5]); });
+    console.log("Last 3 DataNormale: " + last3.join(" | "));
+  }
+
+  rows.forEach(r => {
+    const dateStr = r[5];
+    const dataRaw = r[3];
+    if (!dateStr || dateStr === "DataNormale") return;
+
+    // Normalize DataNormale to YYYY-MM-DD in LOCAL time
+    // Apps Script returns ISO UTC strings like "2026-06-01T22:00:00.000Z"
+    // which in UTC+2 = 2026-06-02 local — must use local date, not UTC
+    let key = null;
+    const s = String(dateStr).trim();
+    const d0 = new Date(s);
+    if (!isNaN(d0)) {
+      key = d0.getFullYear() + "-" +
+            String(d0.getMonth()+1).padStart(2,"0") + "-" +
+            String(d0.getDate()).padStart(2,"0");
+    }
+    if (!key) return;
+    daily[key] = (daily[key] || 0) + 1;
+    const d = parseDate(dataRaw);
+    if (d && !isNaN(d)) hourly[d.getHours()]++;
+  });
+
+  const dailyArr = Object.entries(daily)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([date, count]) => ({ date: fmtDate(new Date(date)), full: date, count }));
+
+  const withMA = dailyArr.map((d, i) => {
+    if (i < 6) return { ...d, ma: null };
+    const slice = dailyArr.slice(i-6, i+1);
+    return { ...d, ma: +(slice.reduce((a,b) => a+b.count, 0)/7).toFixed(1) };
+  });
+
+  const hourlyArr = hourly.map((count,h) => ({ h: String(h).padStart(2,"0"), count })).filter(x => x.count > 0);
+  const counts = dailyArr.map(d => d.count);
+  const avg = counts.length ? +(counts.reduce((a,b)=>a+b,0)/counts.length).toFixed(1) : 0;
+  const max = counts.length ? Math.max(...counts) : 0;
+  const min = counts.length ? Math.min(...counts) : 0;
+  const maxDay = dailyArr.find(d => d.count === max);
+  const minDay = dailyArr.find(d => d.count === min);
+  // Use actual current date, not last entry in sheet
+  const todayKey = new Date().getFullYear() + "-" +
+    String(new Date().getMonth()+1).padStart(2,"0") + "-" +
+    String(new Date().getDate()).padStart(2,"0");
+  const todayEntry = dailyArr.find(d => d.full === todayKey);
+  const today = todayEntry || { date: fmtDate(new Date(todayKey)), full: todayKey, count: 0 };
+  const total = counts.reduce((a,b)=>a+b,0);
+
+  // ── Weekly comparison ──────────────────────────────────────────────────────
+  const DAYS = ["Dom","Lun","Mar","Mer","Gio","Ven","Sab"];
+  function getWeekStart(date, offset) {
+    var d = new Date(date);
+    var day = d.getDay(); // 0=Sun
+    var diff = (day === 0 ? -6 : 1 - day); // Mon=start
+    d.setDate(d.getDate() + diff + offset * 7);
+    d.setHours(0,0,0,0);
+    return d;
+  }
+  var now = new Date();
+  var thisWeekStart = getWeekStart(now, 0);
+  var prevWeekStart = getWeekStart(now, -1);
+
+  var weekCurrent = [], weekPrev = [];
+  for (var i = 0; i < 7; i++) {
+    var dc = new Date(thisWeekStart); dc.setDate(dc.getDate() + i);
+    var dp = new Date(prevWeekStart); dp.setDate(dp.getDate() + i);
+    var kc = dc.getFullYear()+"-"+String(dc.getMonth()+1).padStart(2,"0")+"-"+String(dc.getDate()).padStart(2,"0");
+    var kp = dp.getFullYear()+"-"+String(dp.getMonth()+1).padStart(2,"0")+"-"+String(dp.getDate()).padStart(2,"0");
+    weekCurrent.push({ day: DAYS[dc.getDay()], date: fmtDate(dc), key: kc, count: daily[kc] || 0 });
+    weekPrev.push({ day: DAYS[dp.getDay()], date: fmtDate(dp), key: kp, count: daily[kp] || 0 });
+  }
+  var totalCurrent = weekCurrent.reduce(function(a,b){return a+b.count;},0);
+  var totalPrev    = weekPrev.reduce(function(a,b){return a+b.count;},0);
+
+  return { withMA, hourlyArr, avg, max, min, maxDay, minDay, today, total, days: dailyArr.length, weekCurrent, weekPrev, totalCurrent, totalPrev };
+}
+
+// ── UI updates ────────────────────────────────────────────────────────────────
+function getGoal() {
+  return parseInt(localStorage.getItem("dailyGoal") || "15");
+}
+function saveGoal(val) {
+  var g = Math.max(1, Math.min(40, parseInt(val) || 15));
+  localStorage.setItem("dailyGoal", g);
+  if (processedData) updateKPI(processedData);
+}
+function updateKPI(d) {
+  var goal = getGoal();
+  document.getElementById("goalInput").value = goal;
+  var todayCount = d.today ? d.today.count : 0;
+  document.getElementById("kToday").textContent  = todayCount;
+  document.getElementById("kToday").style.color  = d.today ? getColor(d.today.count) : "#555";
+  document.getElementById("kTodayRisk").textContent = d.today ? getRisk(d.today.count) : "–";
+  document.getElementById("kGoalVal").textContent = goal;
+  var remain = goal - todayCount;
+  document.getElementById("kGoalRemain").textContent = remain > 0 ? remain + " rimaste" : remain === 0 ? "Obiettivo raggiunto!" : Math.abs(remain) + " oltre il limite";
+  document.getElementById("kGoalRemain").style.color = remain >= 0 ? "#4ade80" : "#f87171";
+  var pct = Math.min(100, Math.round(todayCount / goal * 100));
+  var barColor = pct < 70 ? "#4ade80" : pct < 100 ? "#fbbf24" : "#f87171";
+  document.getElementById("goalBar").style.width = pct + "%";
+  document.getElementById("goalBar").style.background = barColor;
+
+  // Check notification threshold
+  var threshold = getThreshold();
+  if (threshold > 0) {
+    document.getElementById("notifThresholdInput").value = threshold;
+  }
+  checkThresholdNotif(todayCount);
+  document.getElementById("kAvg").textContent    = d.avg;
+  document.getElementById("kTotal").textContent  = d.total;
+  document.getElementById("kDays").textContent   = d.days + " giorni";
+  document.getElementById("kMax").textContent    = d.max;
+  document.getElementById("kMaxDay").textContent = d.maxDay ? d.maxDay.date : "–";
+  document.getElementById("kMin").textContent    = d.min;
+  document.getElementById("kMinDay").textContent = d.minDay ? d.minDay.date : "–";
+
+  // insight
+  document.getElementById("insight").innerHTML =
+    `Il tuo consumo medio è <span>${d.avg} sigarette/giorno</span>. ` +
+    `Record massimo: <span class="r">${d.max} sigarette</span> il <span class="r">${d.maxDay?.date || "–"}</span>. ` +
+    `Giorno migliore: <span class="g">${d.min} sigarette</span> il <span class="g">${d.minDay?.date || "–"}</span>. ` +
+    `Totale periodo: <span class="p">${d.total} sigarette</span> in ${d.days} giorni.`;
+}
+
+function renderChart(d) {
+  if (chart) { chart.destroy(); chart = null; }
+  const ctx = document.getElementById("myChart").getContext("2d");
+
+  if (currentView === "giornaliero") {
+    document.getElementById("chartTitle").textContent = "SIGARETTE / GIORNO + media mobile 7gg";
+    document.getElementById("legend").style.display = "flex";
+
+    chart = new Chart(ctx, {
+      data: {
+        labels: d.withMA.map(x => x.date),
+        datasets: [
+          {
+            type: "bar",
+            label: "Sigarette",
+            data: d.withMA.map(x => x.count),
+            backgroundColor: d.withMA.map(x => getColor(x.count) + "cc"),
+            borderRadius: 3,
+            order: 2,
+          },
+          {
+            type: "line",
+            label: "MA7",
+            data: d.withMA.map(x => x.ma),
+            borderColor: "#f87171",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.4,
+            spanGaps: false,
+            order: 1,
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ctx.dataset.label === "MA7"
+                ? `MA7: ${ctx.parsed.y}`
+                : `${ctx.parsed.y} sigarette · ${getRisk(ctx.parsed.y)}`
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: "#444", font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: "#111" } },
+          y: { ticks: { color: "#444", font: { size: 9 } }, grid: { color: "#111" }, max: 25, min: 0 }
+        }
+      }
+    });
+  } else if (currentView === "orario") {
+    document.getElementById("chartTitle").textContent = "DISTRIBUZIONE ORARIA";
+    document.getElementById("legend").style.display = "none";
+
+    chart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: d.hourlyArr.map(x => x.h + ":00"),
+        datasets: [{
+          data: d.hourlyArr.map(x => x.count),
+          backgroundColor: "#818cf8bb",
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#444", font: { size: 9 } }, grid: { color: "#111" } },
+          y: { ticks: { color: "#444", font: { size: 9 } }, grid: { color: "#111" } }
+        }
+      }
+    });
+  } else if (currentView === "settimanale") {
+    var diff = d.totalCurrent - d.totalPrev;
+    var diffStr = diff > 0 ? "+" + diff : String(diff);
+    var diffColor = diff > 0 ? "#f87171" : diff < 0 ? "#4ade80" : "#fbbf24";
+    document.getElementById("chartTitle").textContent =
+      "SETTIMANA CORRENTE vs PRECEDENTE  |  " +
+      d.totalCurrent + " vs " + d.totalPrev + "  (" + diffStr + ")";
+    document.getElementById("legend").innerHTML =
+      "<span style='color:#818cf8'>■</span> Settimana corrente &nbsp;" +
+      "<span style='color:#fbbf2488'>■</span> Settimana precedente";
+    document.getElementById("legend").style.display = "flex";
+
+    chart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: d.weekCurrent.map(x => x.day + " " + x.date),
+        datasets: [
+          {
+            label: "Corrente",
+            data: d.weekCurrent.map(x => x.count),
+            backgroundColor: d.weekCurrent.map(x => getColor(x.count) + "cc"),
+            borderRadius: 3,
+            order: 1,
+          },
+          {
+            label: "Precedente",
+            data: d.weekPrev.map(x => x.count),
+            backgroundColor: "#fbbf2444",
+            borderColor: "#fbbf2488",
+            borderWidth: 1,
+            borderRadius: 3,
+            order: 2,
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                var week = ctx.datasetIndex === 0 ? "Corrente" : "Precedente";
+                return week + ": " + ctx.parsed.y + " sigarette";
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: "#444", font: { size: 9 } }, grid: { color: "#111" } },
+          y: { ticks: { color: "#444", font: { size: 9 } }, grid: { color: "#111" }, min: 0, max: 25 }
+        }
+      }
+    });
+  }
+}
+
+// ── API calls ─────────────────────────────────────────────────────────────────
+function setLoading(val) {
+  document.getElementById("btnAdd").disabled     = val;
+  document.getElementById("btnRefresh").disabled = val;
+  document.getElementById("btnRefresh").textContent = val ? "⏳ Carico..." : "🔄 Aggiorna";
+}
+
+function showError(msg) {
+  const el = document.getElementById("error");
+  if (msg) { el.textContent = "⚠️ " + msg; el.style.display = "block"; }
+  else el.style.display = "none";
+}
+
+async function fetchProxy(params) {
+  const url = PROXY + "?" + new URLSearchParams({ secret: SECRET, ...params, _t: Date.now() });
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+}
+
+async function loadData() {
+  setLoading(true); showError(null);
+  try {
+    const json = await fetchProxy({ action: "read" });
+    if (json.error) throw new Error(json.error);
+    const rows = json.rows || [];
+    processedData = processRows(rows.slice(1));
+    updateKPI(processedData);
+    renderChart(processedData);
+  } catch(e) {
+    showError("Impossibile caricare i dati: " + e.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function setView(v, btn) {
+  currentView = v;
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  btn.classList.add("active");
+  if (processedData) renderChart(processedData);
+}
+
+function getPosition() {
+  return new Promise((resolve) => {
+    // Geolocation requires HTTPS — silently skip on file:// or if denied
+    if (!navigator.geolocation || location.protocol === "file:") {
+      resolve(null); return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      err => {
+        console.warn("Geolocation error:", err.message);
+        resolve(null);
+      },
+      { timeout: 8000, maximumAge: 30000, enableHighAccuracy: true }
+    );
+  });
+}
+
+async function addCigarette() {
+  setLoading(true); showError(null);
+
+  // Show spinner on button while waiting for GPS
+  const btnAdd = document.getElementById("btnAdd");
+  btnAdd.textContent = "📍 Rilevo posizione...";
+
+  try {
+    const geo = await getPosition();
+
+    const lat   = geo ? geo.lat.toFixed(6) : "--";
+    const lon   = geo ? geo.lon.toFixed(6) : "--";
+    const mappa = geo
+      ? `https://www.google.com/maps?q=${geo.lat.toFixed(6)},${geo.lon.toFixed(6)}`
+      : "";   // empty if no position
+
+    const now    = new Date();
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const h = now.getHours(), m = String(now.getMinutes()).padStart(2,"0");
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12  = h % 12 || 12;
+    const dataStr  = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()} at ${h12}:${m}${ampm}`;
+    const dateNorm = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+    const week = Math.ceil((now - new Date(now.getFullYear(),0,1)) / 604800000);
+    const row  = [lat, lon, mappa, dataStr, "1", dateNorm, week];
+
+    const json = await fetchProxy({ action: "append", row: JSON.stringify(row) });
+    if (json.error) throw new Error(json.error);
+
+    const toast = document.getElementById("toast");
+    toast.textContent = geo
+      ? `✅ Registrata! 📍 ${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)}`
+      : "✅ Sigaretta registrata (senza posizione)";
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 3000);
+
+    await loadData();
+  } catch(e) {
+    showError("Errore registrazione: " + e.message);
+    setLoading(false);
+  } finally {
+    btnAdd.textContent = "🚬 +1 Sigaretta";
+  }
+}
+
+// ── PIN ──────────────────────────────────────────────────────────────────────
+var PIN_KEY = "appPin";
+var SESSION_KEY = "pinUnlocked";
+var pinBuffer = "";
+var pinMode = "unlock"; // "unlock" | "set_new" | "confirm_new"
+var pinNewTemp = "";
+
+function hashPin(pin) {
+  // Simple hash — not cryptographic but fine for personal use
+  var h = 0;
+  for (var i = 0; i < pin.length; i++) {
+    h = (Math.imul(31, h) + pin.charCodeAt(i)) | 0;
+  }
+  return String(h);
+}
+
+function initPin() {
+  // Already unlocked this session?
+  if (sessionStorage.getItem(SESSION_KEY) === "1") {
+    unlockApp(); return;
+  }
+  var stored = localStorage.getItem(PIN_KEY);
+  if (!stored) {
+    // First run — ask to set a PIN
+    pinMode = "set_new";
+    document.getElementById("pinPrompt").textContent = "Imposta un nuovo PIN (4 cifre)";
+  }
+  document.getElementById("pinScreen").style.display = "flex";
+}
+
+function pinKey(digit) {
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += digit;
+  updateDots();
+  if (pinBuffer.length === 4) {
+    setTimeout(function() { processPin(); }, 120);
+  }
+}
+
+function pinDel() {
+  pinBuffer = pinBuffer.slice(0, -1);
+  updateDots();
+  document.getElementById("pinError").textContent = "";
+}
+
+function updateDots() {
+  for (var i = 0; i < 4; i++) {
+    var dot = document.getElementById("d" + i);
+    dot.classList.toggle("filled", i < pinBuffer.length);
+    dot.classList.remove("error");
+  }
+}
+
+function processPin() {
+  if (pinMode === "unlock") {
+    var stored = localStorage.getItem(PIN_KEY);
+    if (hashPin(pinBuffer) === stored) {
+      sessionStorage.setItem(SESSION_KEY, "1");
+      unlockApp();
+    } else {
+      showPinError("PIN errato, riprova");
+    }
+  } else if (pinMode === "set_new") {
+    pinNewTemp = pinBuffer;
+    pinMode = "confirm_new";
+    document.getElementById("pinPrompt").textContent = "Conferma il PIN";
+    pinBuffer = ""; updateDots();
+  } else if (pinMode === "confirm_new") {
+    if (pinBuffer === pinNewTemp) {
+      localStorage.setItem(PIN_KEY, hashPin(pinBuffer));
+      sessionStorage.setItem(SESSION_KEY, "1");
+      unlockApp();
+    } else {
+      pinMode = "set_new";
+      pinNewTemp = "";
+      showPinError("I PIN non coincidono, ricomincia");
+    }
+  }
+}
+
+function showPinError(msg) {
+  document.getElementById("pinError").textContent = msg;
+  for (var i = 0; i < 4; i++) {
+    var dot = document.getElementById("d" + i);
+    dot.classList.add("error");
+  }
+  pinBuffer = "";
+  setTimeout(updateDots, 400);
+}
+
+function unlockApp() {
+  document.getElementById("pinScreen").style.display = "none";
+  document.getElementById("pinChangeLink").style.display = "block";
+  loadData();
+}
+
+function showPinChange() {
+  pinMode = "set_new";
+  pinNewTemp = "";
+  pinBuffer = "";
+  updateDots();
+  document.getElementById("pinPrompt").textContent = "Imposta nuovo PIN (4 cifre)";
+  document.getElementById("pinError").textContent = "";
+  document.getElementById("pinScreen").style.display = "flex";
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+// ── Collapsible guide ────────────────────────────────────────────────────────
+function toggleGuide() {
+  var body = document.getElementById("guideBody");
+  var chev = document.getElementById("guideChevron");
+  var open = body.style.display !== "none";
+  body.style.display = open ? "none" : "block";
+  chev.style.transform = open ? "rotate(0deg)" : "rotate(180deg)";
+}
+
+// ── Notification threshold ────────────────────────────────────────────────────
+function getThreshold() {
+  return parseInt(localStorage.getItem("notifThreshold") || "0");
+}
+function saveThreshold(val) {
+  var v = Math.max(0, Math.min(40, parseInt(val) || 0));
+  localStorage.setItem("notifThreshold", v);
+}
+function requestNotifPermission() {
+  if (!("Notification" in window)) {
+    alert("Le notifiche non sono supportate da questo browser.");
+    return;
+  }
+  Notification.requestPermission().then(function(p) {
+    var el = document.getElementById("notifPermStatus");
+    if (p === "granted") {
+      el.textContent = "✅ Permesso concesso";
+      el.style.color = "#4ade80";
+    } else {
+      el.textContent = "❌ Permesso negato";
+      el.style.color = "#f87171";
+    }
+  });
+}
+function checkThresholdNotif(todayCount) {
+  var threshold = getThreshold();
+  if (threshold <= 0) return;
+  if (Notification.permission !== "granted") return;
+  var key = "notifSentFor_" + new Date().toDateString() + "_" + threshold;
+  if (localStorage.getItem(key)) return; // already sent today
+  if (todayCount >= threshold) {
+    localStorage.setItem(key, "1");
+    new Notification("🚬 Soglia raggiunta!", {
+      body: "Hai fumato " + todayCount + " sigarette oggi (soglia: " + threshold + ")",
+      icon: "https://sigarettek.netlify.app/favicon.ico"
+    });
+  }
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+// Show current notification permission
+(function() {
+  var label = document.getElementById("notifPermLabel");
+  if (!label) return;
+  if (!("Notification" in window)) {
+    label.textContent = "non supportate";
+    label.style.color = "#555";
+  } else if (Notification.permission === "granted") {
+    label.textContent = "✅ concesso";
+    label.style.color = "#4ade80";
+  } else if (Notification.permission === "denied") {
+    label.textContent = "❌ negato";
+    label.style.color = "#f87171";
+  } else {
+    label.textContent = "non ancora richiesto";
+    label.style.color = "#555";
+  }
+  var saved = getThreshold();
+  if (saved > 0) document.getElementById("notifThresholdInput").value = saved;
+})();
+
+// Warn if running on file:// (no geolocation)
+if (location.protocol === "file:") {
+  const w = document.createElement("div");
+  w.style.cssText = "background:rgba(251,191,36,.08);border:1px solid #fbbf2444;border-radius:10px;padding:10px 14px;font-size:11px;color:#fbbf24;margin-bottom:14px;text-align:center;line-height:1.7";
+  w.innerHTML = "⚠️ <strong>Posizione GPS non disponibile</strong> — la pagina gira in locale (<code>file://</code>).<br>Per attivare il GPS aprila tramite <strong>HTTPS</strong> (es. GitHub Pages).";
+  document.querySelector(".actions").insertAdjacentElement("afterend", w);
+}
+initPin();
+</script>
+</body>
+</html>
+  .actions { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+  button {
+    padding: 10px 22px; border-radius: 24px; border: none; cursor: pointer;
+    font-family: inherit; font-weight: 700; font-size: 13px; transition: all .2s;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-add  { background: linear-gradient(135deg, var(--red), #fb923c); color: #fff; }
+  .btn-refresh { background: linear-gradient(135deg, var(--purple), #6366f1); color: #fff; }
+  .btn-add:hover:not(:disabled)  { transform: scale(1.04); }
+  .btn-refresh:hover:not(:disabled) { transform: scale(1.04); }
+
+  /* kpi */
+  .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 22px; }
+  .kpi-wide { grid-column: span 3; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi {
+    background: var(--bg2); border-radius: 12px; padding: 14px 16px;
+    border: 1px solid var(--border);
+  }
+  .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 4px; }
+  .kpi-value { font-size: 26px; font-weight: 800; line-height: 1; }
+  .kpi-sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+  /* tabs */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab {
+    padding: 6px 16px; border-radius: 20px; border: none; cursor: pointer;
+    font-size: 11px; text-transform: capitalize; letter-spacing: 0.5px;
+    font-family: inherit; background: rgba(255,255,255,0.06); color: var(--muted);
+    transition: all .2s;
+  }
+  .tab.active { background: var(--red); color: #fff; font-weight: 700; }
+
+  /* chart */
+  .chart-box {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 10px 12px;
+  }
+  .chart-title { font-size: 10px; color: var(--muted); text-align: center; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+  .chart-wrap { position: relative; height: 220px; }
+  .legend { display: flex; gap: 14px; justify-content: center; margin-top: 10px; font-size: 9px; color: var(--muted); }
+
+  /* insight */
+  .insight {
+    margin-top: 18px; background: rgba(248,113,113,0.05);
+    border: 1px solid rgba(248,113,113,0.15); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .insight-title { color: var(--red); font-weight: 700; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .insight-body { color: #777; font-size: 12px; line-height: 1.8; }
+  .insight-body span { color: var(--yellow); }
+  .insight-body span.g { color: var(--green); }
+  .insight-body span.r { color: var(--red); }
+  .insight-body span.p { color: var(--purple); }
+
+  /* guide */
+  .guide {
+    margin-top: 18px; background: rgba(129,140,248,0.04);
+    border: 1px solid rgba(129,140,248,0.15); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .guide-title { color: var(--purple); font-weight: 700; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+  .guide-body { color: #666; font-size: 12px; line-height: 1.9; }
+  .guide-body strong { color: #aaa; }
+  code {
+    color: var(--yellow); background: rgba(251,191,36,0.08);
+    padding: 1px 6px; border-radius: 4px; font-size: 11px;
+  }
+  .code-block {
+    background: #0d0d18; border-radius: 8px; padding: 10px 12px;
+    font-size: 10px; color: var(--purple); word-break: break-all;
+    font-family: monospace; margin: 6px 0; line-height: 1.6;
+  }
+
+  .error { color: var(--red); font-size: 12px; text-align: center; margin-bottom: 12px; }
+  .footer { text-align: center; color: #1e1e2e; font-size: 9px; margin-top: 20px; }
+
   #toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
     background: #1a1a2a; border: 1px solid var(--green); color: var(--green);
