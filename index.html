@@ -608,31 +608,43 @@ function processRows(rows) {
   var gpsPoints = [];
   var homeCount = 0, outCount = 0, noGpsCount = 0;
 
+  function parseCoord(val) {
+    if (!val || val === "--") return NaN;
+    // Replace comma decimal separator with dot (Italian locale)
+    return parseFloat(String(val).replace(",", "."));
+  }
+
   rows.forEach(function(r) {
-    var lat = parseFloat(r[0]);
-    var lon = parseFloat(r[1]);
-    if (isNaN(lat) || isNaN(lon) || r[0] === "--") { noGpsCount++; return; }
+    if (!r[5] || r[5] === "DataNormale") return; // skip header
+    var lat = parseCoord(r[0]);
+    var lon = parseCoord(r[1]);
+    if (isNaN(lat) || isNaN(lon)) { noGpsCount++; return; }
+    // Sanity check: valid coordinate ranges
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) { noGpsCount++; return; }
     var dist = haversine(lat, lon, HOME_LAT, HOME_LON);
     var atHome = dist <= HOME_RADIUS_M;
     if (atHome) homeCount++; else outCount++;
-    gpsPoints.push({ lat: lat, lon: lon, atHome: atHome, mappa: r[2] });
+    gpsPoints.push({ lat: lat, lon: lon, atHome: atHome, mappa: String(r[2] || "") });
   });
 
-  // Simple clustering: group points within 100m of each other
+  // Clustering: group points within 150m
   var clusters = [];
   gpsPoints.forEach(function(p) {
     var found = false;
     for (var i = 0; i < clusters.length; i++) {
       if (haversine(p.lat, p.lon, clusters[i].lat, clusters[i].lon) < 150) {
+        var n = clusters[i].count;
+        clusters[i].lat = (clusters[i].lat * n + p.lat) / (n + 1);
+        clusters[i].lon = (clusters[i].lon * n + p.lon) / (n + 1);
         clusters[i].count++;
-        clusters[i].lat = (clusters[i].lat * (clusters[i].count-1) + p.lat) / clusters[i].count;
-        clusters[i].lon = (clusters[i].lon * (clusters[i].count-1) + p.lon) / clusters[i].count;
         found = true; break;
       }
     }
     if (!found) clusters.push({ lat: p.lat, lon: p.lon, count: 1, atHome: p.atHome });
   });
   clusters.sort(function(a,b) { return b.count - a.count; });
+
+  console.log("[GPS] points:", gpsPoints.length, "noGps:", noGpsCount, "home:", homeCount, "out:", outCount, "clusters:", clusters.length);
 
   return { withMA, hourlyArr, avg, max, min, maxDay, minDay, today, total, days: dailyArr.length,
            weekCurrent, weekPrev, totalCurrent, totalPrev,
@@ -896,44 +908,40 @@ function renderPosizione(d) {
   }).join("");
 
   // Leaflet map
+  var HOME_LAT_MAP = 44.89287765907025;
+  var HOME_LON_MAP = 7.331584258314907;
   setTimeout(function() {
     if (leafletMap) { leafletMap.remove(); leafletMap = null; }
-    var center = d.gpsPoints.length
-      ? [d.gpsPoints[0].lat, d.gpsPoints[0].lon]
-      : [44.89287765907025, 7.331584258314907];
-    leafletMap = L.map("mapContainer", { zoomControl: true }).setView(center, 13);
+    leafletMap = L.map("mapContainer", { zoomControl: true }).setView([HOME_LAT_MAP, HOME_LON_MAP], 10);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap", maxZoom: 19
     }).addTo(leafletMap);
 
     // Home marker
-    var homeIcon = L.divIcon({ html: "🏠", className: "", iconSize: [24,24], iconAnchor: [12,12] });
-    L.marker([44.89287765907025, 7.331584258314907], { icon: homeIcon })
-      .bindPopup("Casa").addTo(leafletMap);
+    var homeIcon = L.divIcon({
+      html: '<div style="font-size:22px;line-height:1">🏠</div>',
+      className: "", iconSize: [28, 28], iconAnchor: [14, 14]
+    });
+    L.marker([HOME_LAT_MAP, HOME_LON_MAP], { icon: homeIcon })
+      .bindPopup("🏠 Casa").addTo(leafletMap);
 
     // Cluster markers
-    d.clusters.slice(0,20).forEach(function(c) {
-      var r = Math.min(20, Math.max(8, c.count * 2));
+    console.log("[MAP] rendering clusters:", d.clusters.length);
+    d.clusters.slice(0, 30).forEach(function(c, i) {
+      var sz = Math.min(28, Math.max(14, 10 + c.count));
       var color = c.atHome ? "#4ade80" : "#818cf8";
       var icon = L.divIcon({
-        html: '<div style="width:' + r + 'px;height:' + r + 'px;border-radius:50%;' +
-              'background:' + color + ';opacity:0.8;border:2px solid #fff;' +
+        html: '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;' +
+              'background:' + color + ';opacity:0.85;border:2px solid rgba(255,255,255,0.8);' +
               'display:flex;align-items:center;justify-content:center;' +
-              'font-size:9px;font-weight:700;color:#000;">' + c.count + '</div>',
-        className: "", iconSize: [r, r], iconAnchor: [r/2, r/2]
+              'font-size:9px;font-weight:800;color:#000;box-sizing:border-box">' + c.count + '</div>',
+        className: "", iconSize: [sz, sz], iconAnchor: [sz/2, sz/2]
       });
       L.marker([c.lat, c.lon], { icon: icon })
-        .bindPopup((c.atHome ? "🏠 Casa" : "📍 Luogo") + ": " + c.count + " sigarette")
+        .bindPopup((c.atHome ? "🏠 Casa" : "📍 Luogo " + (i+1)) + "<br><b>" + c.count + " sigarette</b>")
         .addTo(leafletMap);
     });
-
-    // Fit bounds
-    if (d.gpsPoints.length > 0) {
-      var latlngs = d.clusters.slice(0,20).map(function(c) { return [c.lat, c.lon]; });
-      latlngs.push([44.89287765907025, 7.331584258314907]);
-      leafletMap.fitBounds(latlngs, { padding: [30, 30] });
-    }
-  }, 100);
+  }, 150);
 }
 
 function getPosition() {
