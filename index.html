@@ -932,6 +932,7 @@ function unlockApp(rows) {
 var modalStep = "verify_old";
 var modalBuf = "";
 var modalNewPin = "";
+var modalVerifiedOldPin = "";
 
 function showPinChangeUI() {
   modalStep = "verify_old";
@@ -947,6 +948,7 @@ function closeModal() {
   document.getElementById("pinChangeModal").classList.remove("open");
   modalBuf = "";
   modalNewPin = "";
+  modalVerifiedOldPin = "";
   updateModalDots();
 }
 
@@ -997,7 +999,8 @@ function processModalPin() {
           document.getElementById("modalPrompt").textContent = "Inserisci il PIN attuale";
           showModalError("Errore: " + json.error);
         } else {
-          // Old PIN verified — proceed to new PIN
+          // Old PIN verified — save it and proceed to new PIN
+          modalVerifiedOldPin = oldPin;
           modalStep = "new";
           document.getElementById("modalPrompt").textContent = "Inserisci il nuovo PIN (4 cifre)";
           document.getElementById("modalError").textContent = "";
@@ -1027,7 +1030,7 @@ function processModalPin() {
     }
     // Send change_pin to server — use current session PIN for auth
     var newPin = modalNewPin;
-    var currentPin = sessionStorage.getItem("cachedPin") || "";
+    var currentPin = modalVerifiedOldPin || sessionStorage.getItem("cachedPin") || "";
     modalBuf = "";
     document.getElementById("modalPrompt").textContent = "Salvataggio...";
     var url = PROXY + "?secret=" + SECRET + "&pin=" + encodeURIComponent(currentPin) +
