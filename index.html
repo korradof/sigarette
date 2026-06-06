@@ -215,6 +215,30 @@
     transition: transform .3s ease; z-index: 999; pointer-events: none;
   }
   #toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* Trigger quick-pick */
+  #triggerPicker {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: none; align-items: flex-end; justify-content: center;
+    z-index: 9997; padding: 0 16px 30px;
+  }
+  #triggerPicker.show { display: flex; }
+  .trigger-picker-box {
+    background: #0f0f18; border: 1px solid #1a1a2a; border-radius: 16px;
+    padding: 18px 20px; width: 100%; max-width: 460px; text-align: center;
+  }
+  .trigger-picker-title { font-size: 12px; color: #888; margin-bottom: 14px; }
+  .trigger-picker-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .trigger-btn {
+    background: rgba(255,255,255,0.04); border: 1px solid #1a1a2a;
+    border-radius: 12px; color: #e0e0e0; font-size: 13px; font-weight: 700;
+    padding: 14px 8px; cursor: pointer; font-family: inherit; transition: all .15s;
+  }
+  .trigger-btn:active { background: rgba(129,140,248,0.15); transform: scale(0.96); }
+  .trigger-skip {
+    background: none; border: none; color: #444; font-size: 11px;
+    text-decoration: underline; cursor: pointer; font-family: inherit;
+  }
 </style>
 </head>
 <body>
@@ -230,14 +254,12 @@
   <button class="btn-refresh" id="btnRefresh" onclick="loadData()">🔄 Aggiorna</button>
 </div>
 
-<!-- Obiettivo giornaliero -->
-<div id="goalBox" style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:16px;flex-wrap:wrap;">
-  <span style="font-size:12px;color:#555;">🎯 Obiettivo giornaliero:</span>
-  <input id="goalInput" type="number" min="1" max="40" value="15"
-    style="width:60px;background:#0d0d18;border:1px solid #333;border-radius:8px;color:#fbbf24;
-           font-size:16px;font-weight:700;text-align:center;padding:4px 8px;font-family:inherit;"
-    onchange="saveGoal(this.value)" oninput="saveGoal(this.value)">
+<!-- Obiettivo giornaliero (adattivo) -->
+<div id="goalBox" style="display:flex;align-items:baseline;gap:8px;justify-content:center;margin-bottom:16px;flex-wrap:wrap;text-align:center;">
+  <span style="font-size:12px;color:#555;">🎯 Obiettivo adattivo:</span>
+  <span id="goalAdaptiveVal" style="font-size:16px;font-weight:700;color:#fbbf24;">–</span>
   <span style="font-size:11px;color:#444;">sigarette/giorno</span>
+  <span style="font-size:9px;color:#333;width:100%;">floor(media mobile 7gg) − 1, minimo 5 · ricalcolato automaticamente</span>
 </div>
 
 <div id="error" class="error" style="display:none"></div>
@@ -252,7 +274,7 @@
       <div class="kpi-sub" id="kTodayRisk">–</div>
     </div>
     <div style="text-align:right">
-      <div class="kpi-label">Obiettivo</div>
+      <div class="kpi-label">Obiettivo adattivo</div>
       <div class="kpi-value" id="kGoalVal" style="color:#818cf8">–</div>
       <div class="kpi-sub" id="kGoalRemain"></div>
     </div>
@@ -399,6 +421,20 @@
 
 <div class="footer">live · Google Apps Script proxy · Google Sheets</div>
 <div id="toast">✅ Sigaretta registrata!</div>
+
+<!-- Trigger quick-pick (shown right after registering a cigarette) -->
+<div id="triggerPicker">
+  <div class="trigger-picker-box">
+    <div class="trigger-picker-title">Cosa ha scatenato questa sigaretta?</div>
+    <div class="trigger-picker-grid">
+      <button class="trigger-btn" onclick="selectTrigger('Caffè/pasto')">☕ Caffè/pasto</button>
+      <button class="trigger-btn" onclick="selectTrigger('Stress')">😤 Stress</button>
+      <button class="trigger-btn" onclick="selectTrigger('Noia')">😐 Noia</button>
+      <button class="trigger-btn" onclick="selectTrigger('Automatica')">🚬 Automatica</button>
+    </div>
+    <button class="trigger-skip" onclick="hideTriggerPicker()">Salta</button>
+  </div>
+</div>
 
 <!-- PIN Change Modal -->
 <div id="pinChangeModal">
@@ -655,17 +691,23 @@ function processRows(rows) {
 }
 
 // ── UI updates ────────────────────────────────────────────────────────────────
-function getGoal() {
-  return parseInt(localStorage.getItem("dailyGoal") || "15");
-}
-function saveGoal(val) {
-  var g = Math.max(1, Math.min(40, parseInt(val) || 15));
-  localStorage.setItem("dailyGoal", g);
-  if (processedData) updateKPI(processedData);
+// Adaptive daily goal: floor(MA7) - 1, never below 5.
+// Uses the most recent available 7-day moving average; falls back to the
+// overall average when fewer than 7 days of data exist.
+function computeAdaptiveGoal(d) {
+  var ma7 = null;
+  if (d && d.withMA && d.withMA.length) {
+    for (var i = d.withMA.length - 1; i >= 0; i--) {
+      if (d.withMA[i].ma !== null && d.withMA[i].ma !== undefined) { ma7 = d.withMA[i].ma; break; }
+    }
+  }
+  var base = ma7 !== null ? ma7 : (d && d.avg ? d.avg : 0);
+  return Math.max(5, Math.floor(base) - 1);
 }
 function updateKPI(d) {
-  var goal = getGoal();
-  document.getElementById("goalInput").value = goal;
+  var goal = computeAdaptiveGoal(d);
+  var goalAdaptiveVal = document.getElementById("goalAdaptiveVal");
+  if (goalAdaptiveVal) goalAdaptiveVal.textContent = goal;
   var todayCount = d.today ? d.today.count : 0;
   document.getElementById("kToday").textContent  = todayCount;
   document.getElementById("kToday").style.color  = d.today ? getColor(d.today.count) : "#555";
@@ -1007,6 +1049,9 @@ async function addCigarette() {
     toast.classList.add("show");
     setTimeout(() => toast.classList.remove("show"), 3000);
 
+    // Offer a quick optional trigger pick for the row just appended
+    if (json.row) showTriggerPicker(json.row);
+
     await loadData();
   } catch(e) {
     showError("Errore registrazione: " + e.message);
@@ -1014,6 +1059,38 @@ async function addCigarette() {
   } finally {
     btnAdd.textContent = "🚬 +1 Sigaretta";
   }
+}
+
+// ── Trigger quick-pick ────────────────────────────────────────────────────────
+// Shown right after registering a cigarette; optional and self-dismissing so
+// it never blocks the main flow (auto-closes after 5s with no selection).
+var triggerPickerTimer = null;
+var triggerPickerRow = null;
+
+function showTriggerPicker(row) {
+  triggerPickerRow = row;
+  var el = document.getElementById("triggerPicker");
+  if (!el) return;
+  el.classList.add("show");
+  clearTimeout(triggerPickerTimer);
+  triggerPickerTimer = setTimeout(hideTriggerPicker, 5000);
+}
+
+function hideTriggerPicker() {
+  clearTimeout(triggerPickerTimer);
+  triggerPickerTimer = null;
+  triggerPickerRow = null;
+  var el = document.getElementById("triggerPicker");
+  if (el) el.classList.remove("show");
+}
+
+function selectTrigger(label) {
+  var row = triggerPickerRow;
+  hideTriggerPicker();
+  if (row == null) return;
+  fetchProxy({ action: "set_trigger", row: row, trigger: label }).catch(function(e) {
+    console.warn("Impossibile salvare il trigger:", e.message);
+  });
 }
 
 // ── PIN ──────────────────────────────────────────────────────────────────────
