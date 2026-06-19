@@ -235,6 +235,7 @@
     padding: 14px 8px; cursor: pointer; font-family: inherit; transition: all .15s;
   }
   .trigger-btn:active { background: rgba(129,140,248,0.15); transform: scale(0.96); }
+  .trigger-btn-x { opacity: 0.6; border-style: dashed; font-size: 12px; padding: 10px 8px; }
   .trigger-skip {
     background: none; border: none; color: #444; font-size: 11px;
     text-decoration: underline; cursor: pointer; font-family: inherit;
@@ -449,6 +450,7 @@
       <button class="trigger-btn" onclick="selectTrigger('Stress')">😤 Stress</button>
       <button class="trigger-btn" onclick="selectTrigger('Noia')">😐 Noia</button>
       <button class="trigger-btn" onclick="selectTrigger('Automatica')">🚬 Automatica</button>
+      <button class="trigger-btn trigger-btn-x" onclick="selectTrigger('X')" style="grid-column:span 2">❓ X — Non so</button>
     </div>
     <button class="trigger-skip" onclick="hideTriggerPicker()">Salta</button>
   </div>
@@ -777,7 +779,8 @@ var TRIGGER_COLORS = {
   "Caffè/pasto": "#fbbf24",
   "Stress": "#f87171",
   "Noia": "#818cf8",
-  "Automatica": "#4ade80"
+  "Automatica": "#4ade80",
+  "X": "#64748b"
 };
 var TRIGGER_FALLBACK_COLOR = "#666";
 
