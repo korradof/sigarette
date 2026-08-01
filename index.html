@@ -1036,7 +1036,44 @@ function setView(v, btn) {
 
 var leafletMap = null;
 
+function getCustomLocationNames() {
+  try {
+    return JSON.parse(localStorage.getItem("custom_location_names") || "{}");
+  } catch(e) { return {}; }
+}
+
+function saveCustomLocationName(key, newName) {
+  var names = getCustomLocationNames();
+  if (newName && newName.trim()) {
+    names[key] = newName.trim();
+  } else {
+    delete names[key];
+  }
+  localStorage.setItem("custom_location_names", JSON.stringify(names));
+  if (processedData) renderPosizione(processedData);
+}
+
+function editLocationName(key, defaultName) {
+  var names = getCustomLocationNames();
+  var current = names[key] || defaultName;
+  var newName = prompt("Inserisci il nome personalizzato per questo luogo:", current);
+  if (newName !== null) {
+    saveCustomLocationName(key, newName);
+  }
+}
+
 function renderPosizione(d) {
+  var customNames = getCustomLocationNames();
+
+  // Attach keys and display names to clusters
+  d.clusters.forEach(function(c, i) {
+    var key = c.atHome ? "home" : "loc_" + c.lat.toFixed(3) + "_" + c.lon.toFixed(3);
+    var defName = c.atHome ? "🏠 Casa" : "📍 Luogo " + (i+1);
+    c.key = key;
+    c.defaultName = defName;
+    c.displayName = customNames[key] || defName;
+  });
+
   // Home/Out cards
   var total = d.homeCount + d.outCount;
   document.getElementById("locHome").textContent = d.homeCount;
@@ -1048,11 +1085,14 @@ function renderPosizione(d) {
   var list = document.getElementById("clusterList");
   var top = d.clusters.slice(0,5);
   var maxC = top.length ? top[0].count : 1;
-  list.innerHTML = top.map(function(c, i) {
-    var label = c.atHome ? "🏠 Casa" : "📍 Luogo " + (i+1);
+  list.innerHTML = top.map(function(c) {
     var pct = Math.round(c.count / maxC * 100);
+    var safeDef = c.defaultName.replace(/'/g, "\\'");
     return '<div class="cluster-item">' +
-      '<span class="cluster-name">' + label + '</span>' +
+      '<span class="cluster-name" style="display:flex;align-items:center;gap:6px">' +
+        '<span>' + c.displayName + '</span>' +
+        '<button onclick="editLocationName(\'' + c.key + '\', \'' + safeDef + '\')" style="background:none;border:none;color:#818cf8;cursor:pointer;font-size:12px;padding:2px;line-height:1" title="Rinomina luogo">✏️</button>' +
+      '</span>' +
       '<div class="cluster-bar-wrap"><div class="cluster-bar" style="width:' + pct + '%"></div></div>' +
       '<span class="cluster-count">' + c.count + '</span>' +
     '</div>';
@@ -1071,18 +1111,20 @@ function renderPosizione(d) {
     }).addTo(leafletMap);
 
     // Home marker
+    var homeDisplayName = customNames["home"] || "🏠 Casa";
     var homeIcon = L.divIcon({
       html: '<div style="font-size:22px;line-height:1">🏠</div>',
       className: "", iconSize: [28, 28], iconAnchor: [14, 14]
     });
     L.marker([HOME_LAT_MAP, HOME_LON_MAP], { icon: homeIcon })
-      .bindPopup("🏠 Casa").addTo(leafletMap);
+      .bindPopup('<b>' + homeDisplayName + '</b><br><button onclick="editLocationName(\'home\', \'🏠 Casa\')" style="margin-top:6px;padding:3px 8px;font-size:11px;border-radius:6px;background:#818cf8;color:#fff;border:none;cursor:pointer">✏️ Rinomina</button>')
+      .addTo(leafletMap);
 
     // Cluster markers
-
-    d.clusters.slice(0, 30).forEach(function(c, i) {
+    d.clusters.slice(0, 30).forEach(function(c) {
       var sz = Math.min(28, Math.max(14, 10 + c.count));
       var color = c.atHome ? "#4ade80" : "#818cf8";
+      var safeDef = c.defaultName.replace(/'/g, "\\'");
       var icon = L.divIcon({
         html: '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:50%;' +
               'background:' + color + ';opacity:0.85;border:2px solid rgba(255,255,255,0.8);' +
@@ -1091,7 +1133,7 @@ function renderPosizione(d) {
         className: "", iconSize: [sz, sz], iconAnchor: [sz/2, sz/2]
       });
       L.marker([c.lat, c.lon], { icon: icon })
-        .bindPopup((c.atHome ? "🏠 Casa" : "📍 Luogo " + (i+1)) + "<br><b>" + c.count + " sigarette</b>")
+        .bindPopup('<b>' + c.displayName + '</b><br>' + c.count + ' sigarette<br><button onclick="editLocationName(\'' + c.key + '\', \'' + safeDef + '\')" style="margin-top:6px;padding:3px 8px;font-size:11px;border-radius:6px;background:#818cf8;color:#fff;border:none;cursor:pointer">✏️ Rinomina</button>')
         .addTo(leafletMap);
     });
 

@@ -27,7 +27,7 @@ Permettere l'inserimento rapido tramite smartphone (o scorciatoia widget HTTP Sh
 3. **Obiettivo Adattivo Giornaliero**: Ricalcolato automaticamente come ⌊MA7⌋ − 1 (con minimo di 5 sigarette).
 4. **Notifiche Browser**: Avviso al raggiungimento di una soglia personalizzata di sigarette giornaliere.
 5. **Protezione PIN**: Schermata di blocco con PIN numerico a 4 cifre.
-6. **Mappa & Clustering Posizioni**: Mappatura dei punti GPS con distinzione tra consumo a *Casa* e *Fuori Casa*.
+6. **Mappa & Clustering Posizioni**: Mappatura dei punti GPS con distinzione tra consumo a *Casa* e *Fuori Casa*, con possibilità di **rinominare i luoghi** (es. *Ufficio, Bar, Palestra*) direttamente dalla lista o dai marker sulla mappa.
 
 ---
 
