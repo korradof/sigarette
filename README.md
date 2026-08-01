@@ -16,7 +16,7 @@ Permettere l'inserimento rapido tramite smartphone (o scorciatoia widget HTTP Sh
 - **Hosting & CDN**: Pubblicato su **Cloudflare Pages / Workers** ([`sigarette.korradof.workers.dev`](https://sigarette.korradof.workers.dev) e dominio personalizzato [`corradofarina.net`](https://corradofarina.net/)).
 - **Librerie**:
   - `Chart.js`: Grafici del consumo giornaliero, orario, media mobile MA7 e confronto settimanale.
-  - `Leaflet.js`: Mappa interattiva e clustering geografico dei luoghi in cui si fuma.
+  - `Leaflet.js` con cartografia **Google Maps**: Mappa interattiva e clustering geografico dei luoghi in cui si fuma.
 
 ---
 
