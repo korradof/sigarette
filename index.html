@@ -1004,6 +1004,16 @@ async function loadData(silent = false) {
     const rows = json.rows || [];
     cachedRawRows = rows;
     try { localStorage.setItem("sigarette_rows_cache", JSON.stringify(rows)); } catch(e) {}
+    
+    // Remote places sync
+    if (json.places && typeof json.places === "object") {
+      try {
+        var localNames = getCustomLocationNames();
+        var merged = { ...localNames, ...json.places };
+        localStorage.setItem("custom_location_names", JSON.stringify(merged));
+      } catch(e) {}
+    }
+
     processedData = processRows(rows.slice(1));
     updateKPI(processedData);
     if (currentView !== "posizione") renderChart(processedData);
@@ -1051,6 +1061,11 @@ function saveCustomLocationName(key, newName) {
   }
   localStorage.setItem("custom_location_names", JSON.stringify(names));
   if (processedData) renderPosizione(processedData);
+
+  // Synchronize remotely with Google Sheets via Apps Script proxy
+  fetchProxy({ action: "set_place", place_key: key, place_name: newName ? newName.trim() : "" }).catch(function(e) {
+    console.warn("Impossibile salvare il luogo su Google Sheets:", e.message);
+  });
 }
 
 function editLocationName(key, defaultName) {
