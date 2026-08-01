@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="dns-prefetch" href="https://script.google.com">
+<link rel="dns-prefetch" href="https://tile.openstreetmap.org">
 <title>🚬 Sigarette Live</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
@@ -965,6 +968,12 @@ function renderChart(d) {
   }
 }
 
+let cachedRawRows = [];
+try {
+  const saved = localStorage.getItem("sigarette_rows_cache");
+  if (saved) cachedRawRows = JSON.parse(saved);
+} catch(e) {}
+
 // ── API calls ─────────────────────────────────────────────────────────────────
 function setLoading(val) {
   document.getElementById("btnAdd").disabled     = val;
@@ -979,25 +988,30 @@ function showError(msg) {
 }
 
 async function fetchProxy(params) {
-  var pin = sessionStorage.getItem("cachedPin") || "";
+  var pin = sessionStorage.getItem("cachedPin") || localStorage.getItem("lastValidPin") || "";
   const url = PROXY + "?" + new URLSearchParams({ secret: SECRET, pin: pin, ...params, _t: Date.now() });
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error("HTTP " + res.status);
   return res.json();
 }
 
-async function loadData() {
-  setLoading(true); showError(null);
+async function loadData(silent = false) {
+  if (!silent) setLoading(true);
+  showError(null);
   try {
     const json = await fetchProxy({ action: "read" });
     if (json.error) throw new Error(json.error);
     const rows = json.rows || [];
+    cachedRawRows = rows;
+    try { localStorage.setItem("sigarette_rows_cache", JSON.stringify(rows)); } catch(e) {}
     processedData = processRows(rows.slice(1));
     updateKPI(processedData);
-    renderChart(processedData);
+    if (currentView !== "posizione") renderChart(processedData);
     renderTriggerStats(processedData);
   } catch(e) {
-    showError("Impossibile caricare i dati: " + e.message);
+    if (!silent || !processedData) {
+      showError("Impossibile caricare i dati: " + e.message);
+    }
   } finally {
     setLoading(false);
   }
@@ -1108,7 +1122,6 @@ function getPosition() {
 async function addCigarette() {
   setLoading(true); showError(null);
 
-  // Show spinner on button while waiting for GPS
   const btnAdd = document.getElementById("btnAdd");
   btnAdd.textContent = "📍 Rilevo posizione...";
 
@@ -1119,7 +1132,7 @@ async function addCigarette() {
     const lon   = geo ? geo.lon.toFixed(6) : "--";
     const mappa = geo
       ? `https://www.google.com/maps?q=${geo.lat.toFixed(6)},${geo.lon.toFixed(6)}`
-      : "";   // empty if no position
+      : "";
 
     const now    = new Date();
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -1131,8 +1144,17 @@ async function addCigarette() {
     const week = Math.ceil((now - new Date(now.getFullYear(),0,1)) / 604800000);
     const row  = [lat, lon, mappa, dataStr, "1", dateNorm, week];
 
-    const json = await fetchProxy({ action: "append", row: JSON.stringify(row) });
-    if (json.error) throw new Error(json.error);
+    // Optimistic UI update: update local cache & render immediately (0ms wait!)
+    if (cachedRawRows.length === 0 && processedData) {
+      cachedRawRows = [["Latitudine","Longitudine","Link Mappa","Data","Sigarette","DataNormale","Settimana"]];
+    }
+    cachedRawRows.push(row);
+    try { localStorage.setItem("sigarette_rows_cache", JSON.stringify(cachedRawRows)); } catch(e) {}
+
+    processedData = processRows(cachedRawRows.slice(1));
+    updateKPI(processedData);
+    if (currentView !== "posizione") renderChart(processedData);
+    renderTriggerStats(processedData);
 
     const toast = document.getElementById("toast");
     toast.textContent = geo
@@ -1141,15 +1163,25 @@ async function addCigarette() {
     toast.classList.add("show");
     setTimeout(() => toast.classList.remove("show"), 3000);
 
-    // Offer a quick optional trigger pick for the row just appended
-    if (json.row) showTriggerPicker(json.row);
+    // Send to Google Apps Script asynchronously in background
+    fetchProxy({ action: "append", row: JSON.stringify(row) })
+      .then(json => {
+        if (json.error) throw new Error(json.error);
+        if (json.row) showTriggerPicker(json.row);
+        loadData(true); // background silent sync
+      })
+      .catch(e => {
+        showError("Errore sincronizzazione server: " + e.message);
+      })
+      .finally(() => {
+        btnAdd.textContent = "🚬 +1 Sigaretta";
+        setLoading(false);
+      });
 
-    await loadData();
   } catch(e) {
     showError("Errore registrazione: " + e.message);
-    setLoading(false);
-  } finally {
     btnAdd.textContent = "🚬 +1 Sigaretta";
+    setLoading(false);
   }
 }
 
@@ -1221,9 +1253,19 @@ function updateDots() {
 }
 
 function processPin() {
-  // Verify PIN against server
   var pin = pinBuffer;
   pinBuffer = "";
+
+  // Instant unlock if PIN matches last known valid PIN
+  const lastValid = localStorage.getItem("lastValidPin");
+  if (lastValid && lastValid === pin) {
+    sessionStorage.setItem(SESSION_KEY, "1");
+    sessionStorage.setItem("cachedPin", pin);
+    unlockApp();
+    loadData(true); // background silent check
+    return;
+  }
+
   document.getElementById("pinPrompt").textContent = "Verifica...";
   var url = PROXY + "?secret=" + SECRET + "&pin=" + encodeURIComponent(pin) + "&action=read&_t=" + Date.now();
   fetch(url, {redirect: "follow"})
@@ -1236,9 +1278,9 @@ function processPin() {
         document.getElementById("pinPrompt").textContent = "Inserisci il PIN per accedere";
         showPinError("Errore: " + json.error);
       } else {
-        // PIN ok — store session and load data from response
         sessionStorage.setItem(SESSION_KEY, "1");
         sessionStorage.setItem("cachedPin", pin);
+        try { localStorage.setItem("lastValidPin", pin); } catch(e) {}
         unlockApp(json.rows);
       }
     })
@@ -1248,7 +1290,7 @@ function processPin() {
     });
 }
 
-function showPinError(msg) {
+showPinError = function(msg) {
   document.getElementById("pinError").textContent = msg;
   for (var i = 0; i < 4; i++) {
     var dot = document.getElementById("d" + i);
@@ -1259,18 +1301,29 @@ function showPinError(msg) {
     for (var i = 0; i < 4; i++)
       document.getElementById("d" + i).classList.remove("error");
   }, 500);
-}
+};
 
 function unlockApp(rows) {
   document.getElementById("pinScreen").style.display = "none";
   document.getElementById("appContent").style.display = "block";
   if (rows) {
+    cachedRawRows = rows;
+    try { localStorage.setItem("sigarette_rows_cache", JSON.stringify(rows)); } catch(e) {}
     processedData = processRows(rows.slice(1));
     updateKPI(processedData);
     renderChart(processedData);
     renderTriggerStats(processedData);
   } else {
-    loadData();
+    // If cached data is available, render immediately, then refresh silently in background!
+    if (cachedRawRows && cachedRawRows.length > 1) {
+      processedData = processRows(cachedRawRows.slice(1));
+      updateKPI(processedData);
+      renderChart(processedData);
+      renderTriggerStats(processedData);
+      loadData(true); // background silent refresh
+    } else {
+      loadData(false);
+    }
   }
 }
 
