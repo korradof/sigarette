@@ -704,7 +704,9 @@ function processRows(rows) {
         found = true; break;
       }
     }
-    if (!found) clusters.push({ lat: p.lat, lon: p.lon, count: 1, atHome: p.atHome });
+    // seedLat/seedLon = first point's coords, kept stable as a naming key
+    // (c.lat/c.lon drift over time as the running average incorporates new points)
+    if (!found) clusters.push({ lat: p.lat, lon: p.lon, seedLat: p.lat, seedLon: p.lon, count: 1, atHome: p.atHome });
   });
   clusters.sort(function(a,b) { return b.count - a.count; });
 
@@ -1084,7 +1086,7 @@ function renderPosizione(d) {
 
   // Attach keys and display names to clusters
   d.clusters.forEach(function(c, i) {
-    var key = c.atHome ? "home" : "loc_" + c.lat.toFixed(3) + "_" + c.lon.toFixed(3);
+    var key = c.atHome ? "home" : "loc_" + c.seedLat.toFixed(3) + "_" + c.seedLon.toFixed(3);
     var defName = c.atHome ? "🏠 Casa" : "📍 Luogo " + (i+1);
     c.key = key;
     c.defaultName = defName;
