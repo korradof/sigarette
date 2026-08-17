@@ -662,6 +662,7 @@ function processRows(rows) {
 
   var gpsPoints = [];
   var homeCount = 0, outCount = 0, noGpsCount = 0;
+  var lastPosition = null;
 
   function parseCoord(val) {
     if (val === null || val === undefined || val === "" || val === "--") return NaN;
@@ -687,6 +688,7 @@ function processRows(rows) {
 
     if (atHome) homeCount++; else outCount++;
     gpsPoints.push({ lat: lat, lon: lon, atHome: atHome, mappa: String(r[2] || "") });
+    lastPosition = { lat: lat, lon: lon };
   });
 
   // Clustering: group points within 150m
@@ -720,7 +722,7 @@ function processRows(rows) {
 
   return { withMA, hourlyArr, avg, max, min, maxDay, minDay, today, total, days: dailyArr.length,
            weekCurrent, weekPrev, totalCurrent, totalPrev,
-           gpsPoints, clusters, homeCount, outCount, noGpsCount, triggerCounts };
+           gpsPoints, clusters, homeCount, outCount, noGpsCount, triggerCounts, lastPosition };
 }
 
 // ── UI updates ────────────────────────────────────────────────────────────────
@@ -1118,7 +1120,9 @@ function renderPosizione(d) {
   var HOME_LON_MAP = 7.332644;
   setTimeout(function() {
     if (leafletMap) { leafletMap.remove(); leafletMap = null; }
-    leafletMap = L.map("mapContainer", { zoomControl: true }).setView([HOME_LAT_MAP, HOME_LON_MAP], 10);
+    var initialCenter = d.lastPosition ? [d.lastPosition.lat, d.lastPosition.lon] : [HOME_LAT_MAP, HOME_LON_MAP];
+    var initialZoom = d.lastPosition ? 15 : 10;
+    leafletMap = L.map("mapContainer", { zoomControl: true }).setView(initialCenter, initialZoom);
     L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
       maxZoom: 20,
       subdomains: ["mt0", "mt1", "mt2", "mt3"],
@@ -1152,12 +1156,6 @@ function renderPosizione(d) {
         .addTo(leafletMap);
     });
 
-    // Fit map to cluster bounds + home marker
-    if (d.clusters.length > 0) {
-      var bounds = d.clusters.slice(0, 30).map(function(c) { return [c.lat, c.lon]; });
-      bounds.push([HOME_LAT_MAP, HOME_LON_MAP]);
-      leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
-    }
   }, 150);
 }
 
